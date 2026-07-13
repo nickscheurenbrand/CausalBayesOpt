@@ -56,6 +56,7 @@ class PARENT_SCALE(BASE):
         individual: bool = False,
         use_doubly_robust: bool = True,
         use_iscm: bool = False,
+        boundary_eps_frac: float = 0.01,
     ):
         self.graph = graph
         self.num_nodes = len(self.graph.variables)
@@ -76,6 +77,9 @@ class PARENT_SCALE(BASE):
         self.individual = individual
         self.use_doubly_robust = use_doubly_robust
         self.use_iscm = use_iscm
+        # fraction of each variable's intervention-range width used as the
+        # epsilon when checking whether an intervention lies on the boundary
+        self.boundary_eps_frac = boundary_eps_frac
 
     def set_values(self, D_O, D_I, exploration_set):
         self.D_O = deepcopy(D_O)
@@ -359,6 +363,25 @@ class PARENT_SCALE(BASE):
 
         return data_x_list_new, data_y_list_new, parameter_spaces, target_classes
 
+    def compute_boundary_percentage(
+        self, var_to_intervene: Tuple[str], intervention_values: np.ndarray
+    ) -> Tuple[float, int, int]:
+        """
+        Computes the fraction of intervened dimensions whose value lies within
+        +- eps of the intervention-range boundary, where eps is
+        boundary_eps_frac of the range width of each variable
+        """
+        intervention_ranges = self.graph.interventional_range_data
+        n_dims = len(var_to_intervene)
+        n_on_boundary = 0
+        for j, var in enumerate(var_to_intervene):
+            lower, upper = intervention_ranges[var]
+            eps = self.boundary_eps_frac * (upper - lower)
+            value = intervention_values[j]
+            if value <= lower + eps or value >= upper - eps:
+                n_on_boundary += 1
+        return n_on_boundary / n_dims, n_on_boundary, n_dims
+
     def run_algorithm(self, T: int = 30, show_graphics: bool = False, file: str = None):
 
         self.data_and_prior_setup()
@@ -411,6 +434,10 @@ class PARENT_SCALE(BASE):
         average_uncertainty: List[float] = []
         intervention_set: List[Tuple[str]] = []
         intervention_values: List[Tuple[float]] = []
+        # per-iteration tracking of boundary interventions and parent posterior
+        self.boundary_percentages: List[float] = []
+        self.boundary_counts: List[Tuple[int, int]] = []
+        self.posterior_history: List[Dict[Tuple, float]] = []
         # global_opt.append(current_global_min)
         current_cost.append(0.0)
         cost_functions = self.graph.get_cost_structure(self.cost_num)
@@ -434,6 +461,8 @@ class PARENT_SCALE(BASE):
             self.do_effects_functions,
             self.posterior,
         )
+        # iteration-0 snapshot of the posterior over parent sets
+        self.posterior_history.append(dict(zip(self.graphs.keys(), self.posterior)))
 
         for i in range(T):
             logging.info(f"----------------------ITERATION {i}----------------------")
@@ -466,6 +495,17 @@ class PARENT_SCALE(BASE):
                 ]
             ).reshape(1, -1)
             print(f"Back to the original range {x_new_list_intervention}")
+
+            # track how many intervened dimensions lie on the boundary
+            boundary_pct, n_on_boundary, n_dims = self.compute_boundary_percentage(
+                var_to_intervene, x_new_list_intervention[0]
+            )
+            self.boundary_percentages.append(boundary_pct)
+            self.boundary_counts.append((n_on_boundary, n_dims))
+            logging.info(
+                f"Boundary percentage {boundary_pct:.2f} "
+                f"({n_on_boundary}/{n_dims} dimensions on boundary)"
+            )
             y_new = target_classes[target_index].compute_target(x_new_list_intervention)
             print(f"The outcome is {y_new}")
             data_x_list[target_index] = np.vstack(
@@ -544,6 +584,10 @@ class PARENT_SCALE(BASE):
             self.posterior = [
                 self.prior_probabilities[parents] for parents in self.graphs
             ]
+            # snapshot of the posterior over parent sets after this iteration
+            self.posterior_history.append(
+                dict(zip(self.graphs.keys(), self.posterior))
+            )
 
             self.redefine_exploration_set()
             logging.info(f"The current exploration set is {self.exploration_set}")

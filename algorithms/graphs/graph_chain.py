@@ -14,7 +14,11 @@ from config import NOISE_TYPE_INDEX, NOISE_TYPES
 from diffcbed.envs.causal_environment import CausalEnvironment
 from diffcbed.envs.chain import Chain
 from diffcbed.envs.samplers import D
-from diffcbed.models.dibs.models.nonlinearGaussian import DenseNonlinearGaussianJAX
+try:
+    from diffcbed.models.dibs.models.nonlinearGaussian import DenseNonlinearGaussianJAX
+except ImportError:
+    DenseNonlinearGaussianJAX = "Any"
+
 from graphs.graph import GraphStructure
 
 
