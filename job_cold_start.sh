@@ -1,6 +1,6 @@
 #!/bin/bash
-#PBS -l select=1:ncpus=4:mem=16gb
-#PBS -l walltime=02:00:00
+#PBS -l select=1:ncpus=4:mem=16gb:ngpus=1
+#PBS -l walltime=20:00:00
 #PBS -N cold_start_bootstrap_dump
 
 source $HOME/causal_bayes_opt/.venv/bin/activate
