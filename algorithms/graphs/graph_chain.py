@@ -4,7 +4,10 @@ from collections import OrderedDict
 from itertools import chain
 from typing import Any, Callable, Dict, List, Optional, OrderedDict, Tuple
 
-import jax.numpy as jnp
+try:
+    import jax.numpy as jnp
+except Exception:
+    import numpy as jnp  # NumPy is API-compatible for the ops used in nn_forward
 import networkx as nx
 import numpy as np
 from GPy.models.gp_regression import GPRegression
@@ -16,8 +19,10 @@ from diffcbed.envs.chain import Chain
 from diffcbed.envs.samplers import D
 try:
     from diffcbed.models.dibs.models.nonlinearGaussian import DenseNonlinearGaussianJAX
-except ImportError:
-    DenseNonlinearGaussianJAX = "Any"
+except Exception:
+    from diffcbed.envs.numpy_nonlinear_sem import (
+        DenseNonlinearGaussianNumpy as DenseNonlinearGaussianJAX,
+    )
 
 from graphs.graph import GraphStructure
 
@@ -55,9 +60,10 @@ def define_SEM_causalenv_nonlinear(
 
     def nn_forward(node, parents, sample, theta, epsilon):
         N = 1 if isinstance(epsilon, float) else len(epsilon)
-        parent_values = jnp.zeros(shape=(N, num_variables))
+        # NumPy-native (was jnp with .at[].set); parents laid into leading cols
+        parent_values = np.zeros((N, num_variables))
         for i, parent in enumerate(parents):
-            parent_values = parent_values.at[:, i].set(sample[str(parent)])
+            parent_values[:, i] = np.asarray(sample[str(parent)]).reshape(-1)
         return conditionals.eltwise_nn_forward(theta, parent_values)[:, node] + epsilon
 
     for node in topological_list:

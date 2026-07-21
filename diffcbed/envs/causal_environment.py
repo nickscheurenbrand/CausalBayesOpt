@@ -16,10 +16,18 @@ from sklearn.metrics import f1_score
 
 try:
     from jax import random
+except Exception:
+    random = None
+    print("jax random is not available")
 
+try:
     from diffcbed.models.dibs.models.nonlinearGaussian import DenseNonlinearGaussianJAX
-except:
-    print("jax is not installed")
+except Exception:
+    # the dibs submodule is unavailable (orphaned/empty); fall back to a
+    # self-contained NumPy nonlinear-Gaussian SEM with the same call surface
+    from diffcbed.envs.numpy_nonlinear_sem import (
+        DenseNonlinearGaussianNumpy as DenseNonlinearGaussianJAX,
+    )
 
 from config import NOISE_TYPES, PRESETS, VARIABLE_TYPES
 from diffcbed.envs.samplers import D
@@ -200,7 +208,9 @@ class CausalEnvironment(torch.utils.data.Dataset):
     def sample_weights(self):
         """Sample the edge weights"""
         if self.nonlinear:
-            self.rng_jax, subk = random.split(self.rng_jax)
+            subk = None
+            if random is not None:
+                self.rng_jax, subk = random.split(self.rng_jax)
             self.weights = self.conditionals.sample_parameters(
                 key=subk, n_vars=self.num_nodes
             )
@@ -258,7 +268,9 @@ class CausalEnvironment(torch.utils.data.Dataset):
         return Data(samples=samples, intervention_node=-1)
 
     def sample_nonlinear(self, num_samples, graph=None, node=None, values=None):
-        self.rng_jax, subk = random.split(self.rng_jax)
+        subk = None
+        if random is not None:
+            self.rng_jax, subk = random.split(self.rng_jax)
         if graph is None:
             graph = self.graph
         mat = nx.to_numpy_array(graph)
