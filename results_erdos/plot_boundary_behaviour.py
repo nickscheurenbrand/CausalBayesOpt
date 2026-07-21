@@ -56,6 +56,25 @@ def parse_args():
     p.add_argument("--n_obs", type=int, default=200)
     p.add_argument("--n_int", type=int, default=2)
     p.add_argument("--nonlinear", action="store_true")
+    p.add_argument(
+        "--results_subdir",
+        type=str,
+        default="boundary_tracking",
+        help="results/<subdir>/{graph_type}/... for the baseline runs "
+        "(e.g. boundary_tracking_dream). Its _oracle sibling is used for fig2 if present.",
+    )
+    p.add_argument(
+        "--graph_types",
+        type=str,
+        default=None,
+        help="comma-separated graph-type labels; defaults to the Erdos sweep",
+    )
+    p.add_argument(
+        "--out_dir",
+        type=str,
+        default=None,
+        help="output directory for the figures; defaults to results/<results_subdir>/plots",
+    )
     return p.parse_args()
 
 
@@ -223,41 +242,50 @@ def fig3_summary(bars, out_dir):
 
 def main():
     args = parse_args()
-    out_dir = f"{REPO_ROOT}/results/boundary_tracking/plots"
+    graph_types = (
+        args.graph_types.split(",")
+        if args.graph_types
+        else ["Erdos20", "Erdos50", "Erdos100"]
+    )
+    out_dir = args.out_dir or f"{REPO_ROOT}/results/{args.results_subdir}/plots"
     os.makedirs(out_dir, exist_ok=True)
     kw = dict(run_num=args.run_num, n_obs=args.n_obs, n_int=args.n_int, nonlinear=args.nonlinear)
 
     real = {}
-    for g in ["Erdos20", "Erdos50", "Erdos100"]:
-        r = load_one("boundary_tracking", g, **kw)
+    for g in graph_types:
+        r = load_one(args.results_subdir, g, **kw)
         if r is not None:
             real[g] = r
+    # fig2 (real-vs-oracle confound) only applies if the _oracle sibling exists
     oracle = {}
-    for g in ["Erdos50", "Erdos100"]:
-        r = load_one("boundary_tracking_oracle", g, **kw)
+    for g in graph_types:
+        r = load_one(f"{args.results_subdir}_oracle", g, **kw)
         if r is not None:
             oracle[g] = r
 
     if not real:
-        print("No real boundary-tracking pickles found; nothing to plot.")
+        print("No baseline boundary-tracking pickles found; nothing to plot.")
         return
 
     made = []
     made.append(fig1_by_parent(list(real.values()), out_dir))
 
-    if "Erdos100" in real and "Erdos100" in oracle:
-        made.append(fig2_confound(real["Erdos100"], oracle["Erdos100"], out_dir))
+    # fig2: prefer the largest graph type present in both baseline and oracle
+    # (graph_types is ordered smallest -> largest; the confound is most striking
+    # at scale, e.g. Erdos100)
+    confound_g = next((g for g in reversed(graph_types) if g in real and g in oracle), None)
+    if confound_g is not None:
+        made.append(fig2_confound(real[confound_g], oracle[confound_g], out_dir))
     else:
-        print("Skipping fig2: need both real and oracle Erdos100 pickles.")
+        print("Skipping fig2 (real-vs-oracle confound): no matching oracle runs found.")
 
-    # summary bars: real runs (parent status inferred: true if any intervention
-    # hit a true parent AND none hit a non-parent -> but simplest: label by
-    # whether the pooled interventions were majority on true parents)
+    # summary bars: label each run by whether its interventions were majority on
+    # true parents
     bars = []
     for g, r in real.items():
         p, f = positions(r)
         on_tp = bool(np.mean(f) >= 0.5)
-        bars.append((f"{g}\n(real)", outer_band_frac(p), on_tp))
+        bars.append((f"{g}", outer_band_frac(p), on_tp))
     for g, r in oracle.items():
         p, f = positions(r)
         bars.append((f"{g}\n(oracle)", outer_band_frac(p), True))

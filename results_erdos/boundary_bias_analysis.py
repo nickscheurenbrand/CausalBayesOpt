@@ -61,15 +61,23 @@ def parse_args():
         "--results_subdir",
         type=str,
         default="boundary_tracking",
-        help="results/<subdir>/{graph_type}/... -- use boundary_tracking_oracle for the oracle runs",
+        help="results/<subdir>/{graph_type}/... -- e.g. boundary_tracking_oracle or boundary_tracking_dream",
+    )
+    parser.add_argument(
+        "--graph_types",
+        type=str,
+        default=None,
+        help="comma-separated graph-type labels to analyse; defaults to the Erdos sweep",
     )
     return parser.parse_args()
 
 
-def load_results(run_num, n_obs, n_int, nonlinear, results_subdir="boundary_tracking"):
+def load_results(
+    run_num, n_obs, n_int, nonlinear, results_subdir="boundary_tracking", graph_types=None
+):
     nonlinear_string = "_nonlinear" if nonlinear else ""
     results = {}
-    for graph_type in GRAPH_TYPES:
+    for graph_type in graph_types or GRAPH_TYPES:
         base = f"run{run_num}_cbo_unknown_dr2_boundary_{n_obs}_{n_int}{nonlinear_string}"
         path = f"{REPO_ROOT}/results/{results_subdir}/{graph_type}/{base}.pickle"
         if not os.path.exists(path):
@@ -184,8 +192,14 @@ def verdict(p, d):
 
 def main():
     args = parse_args()
+    graph_types = args.graph_types.split(",") if args.graph_types else None
     results = load_results(
-        args.run_num, args.n_obs, args.n_int, args.nonlinear, args.results_subdir
+        args.run_num,
+        args.n_obs,
+        args.n_int,
+        args.nonlinear,
+        args.results_subdir,
+        graph_types,
     )
     if not results:
         print("No results found, nothing to analyze")
