@@ -69,16 +69,23 @@ def parse_args():
         default=None,
         help="comma-separated graph-type labels to analyse; defaults to the Erdos sweep",
     )
+    parser.add_argument(
+        "--base_name_prefix",
+        type=str,
+        default="cbo_unknown_dr2_boundary",
+        help="pickle base-name prefix; use cbo_confounded_dr2_boundary for the confounder runs",
+    )
     return parser.parse_args()
 
 
 def load_results(
-    run_num, n_obs, n_int, nonlinear, results_subdir="boundary_tracking", graph_types=None
+    run_num, n_obs, n_int, nonlinear, results_subdir="boundary_tracking",
+    graph_types=None, base_name_prefix="cbo_unknown_dr2_boundary",
 ):
     nonlinear_string = "_nonlinear" if nonlinear else ""
     results = {}
     for graph_type in graph_types or GRAPH_TYPES:
-        base = f"run{run_num}_cbo_unknown_dr2_boundary_{n_obs}_{n_int}{nonlinear_string}"
+        base = f"run{run_num}_{base_name_prefix}_{n_obs}_{n_int}{nonlinear_string}"
         path = f"{REPO_ROOT}/results/{results_subdir}/{graph_type}/{base}.pickle"
         if not os.path.exists(path):
             print(f"Warning: {path} not found, skipping {graph_type}")
@@ -86,6 +93,31 @@ def load_results(
         with open(path, "rb") as f:
             results[graph_type] = pickle.load(f)
     return results
+
+
+def confounder_classifier(result):
+    """
+    Returns a function var -> category in
+    {true-parent, confounded-true-parent, confounded-non-parent, unconfounded-non-parent}.
+    Uses the saved Confounders metadata (the injected hidden confounders) plus
+    True_Parents. Falls back to true-parent/non-parent when no Confounders key
+    (backward-compatible with the pre-confounder pickles).
+    """
+    true_parents = set(result.get("True_Parents", ()))
+    confounded_x = {c["x"] for c in result.get("Confounders", [])}
+
+    def classify(var):
+        is_parent = var in true_parents
+        is_confounded = var in confounded_x
+        if is_parent and is_confounded:
+            return "confounded-true-parent"
+        if is_parent:
+            return "true-parent"
+        if is_confounded:
+            return "confounded-non-parent"
+        return "unconfounded-non-parent"
+
+    return classify
 
 
 def normalized_positions(result):
@@ -200,6 +232,7 @@ def main():
         args.nonlinear,
         args.results_subdir,
         graph_types,
+        args.base_name_prefix,
     )
     if not results:
         print("No results found, nothing to analyze")
@@ -249,6 +282,57 @@ def main():
         fe, _ = summarize_band(p[early], 0.20)
         fl, _ = summarize_band(p[late], 0.20)
         print(f"[temporal]    outer20% early(first {third}) = {fe*100:.0f}%   late(last {third}) = {fl*100:.0f}%")
+
+        # confounder breakdown (only meaningful when Confounders metadata present)
+        if result.get("Confounders"):
+            classify = confounder_classifier(result)
+            cats = np.array(
+                [
+                    classify(var)
+                    for varset in result["Intervention_Set"]
+                    for var in varset
+                ]
+            )
+            print(f"[CONFOUNDER split]  x_kind={result.get('X_Kind')}")
+            for cat in (
+                "true-parent",
+                "confounded-true-parent",
+                "confounded-non-parent",
+                "unconfounded-non-parent",
+            ):
+                mask = cats == cat
+                if mask.sum() == 0:
+                    continue
+                frac, _ = summarize_band(p[mask], 0.20)
+                print(
+                    f"    {cat:>24}: n={int(mask.sum()):>2}  outer20%={frac*100:>3.0f}%  "
+                    f"mean_d={np.mean(d[mask]):.2f}  mean_pos={np.mean(p[mask]):.2f}"
+                )
+            # per injected confounder X: mis-inclusion + boundary behaviour
+            posterior_history = result["Posterior_History"]
+            for c in result["Confounders"]:
+                x = c["x"]
+                in_post = any(x in set(k) for snap in posterior_history for k in snap)
+                map_incl = any(
+                    x in set(max(snap.items(), key=lambda kv: kv[1])[0])
+                    for snap in posterior_history
+                    if snap
+                )
+                x_here = np.array(
+                    [
+                        var == x
+                        for varset in result["Intervention_Set"]
+                        for var in varset
+                    ]
+                )
+                n_x = int(x_here.sum())
+                x_out = summarize_band(p[x_here], 0.20)[0] if n_x else float("nan")
+                print(
+                    f"    confounded X={x} (is_true_parent={c['is_true_parent']}, "
+                    f"w_zx={c['w_zx']}, w_zy={c['w_zy']}): "
+                    f"ever in posterior={in_post}, ever in MAP={map_incl}, "
+                    f"intervened {n_x}x, its outer20%={x_out*100:.0f}%"
+                )
 
     # pooled
     P = np.concatenate(pooled_p)

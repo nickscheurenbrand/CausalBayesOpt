@@ -191,6 +191,10 @@ def run_boundary_tracking_dream(args):
         "Epsilon_Fraction": model.boundary_eps_frac,
         "Target": graph.target,
         "Dream": True,
+        # full structure so the confounder classifier works on these runs too
+        "Edges": list(graph.edges),
+        "Parents": {v: list(graph.parents[v]) for v in graph.variables},
+        "Variables": list(graph.variables),
     }
 
     results_dir = f"results/boundary_tracking_dream/{args.graph_type}"

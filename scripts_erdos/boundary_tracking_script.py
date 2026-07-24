@@ -168,6 +168,11 @@ def run_boundary_tracking(
         "True_Parents": true_parents,
         "Intervention_Ranges": intervention_ranges,
         "Epsilon_Fraction": model.boundary_eps_frac,
+        # full structure so the confounder classifier works on these runs too
+        "Edges": list(graph.edges),
+        "Parents": {v: list(graph.parents[v]) for v in graph.variables},
+        "Variables": list(graph.variables),
+        "Target": graph.target,
     }
 
     results_dir = f"results/boundary_tracking/{graph_type}"
