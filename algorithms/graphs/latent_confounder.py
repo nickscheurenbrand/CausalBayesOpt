@@ -171,5 +171,10 @@ def generate_confounded_observational_data(
     D_O_full = sample_model(
         sampler.SEM, sample_count=n_obs, graph=sampler, use_iscm=False
     )
-    D_O = {v: D_O_full[v] for v in base_graph.variables}  # drop Z_conf_*
+    # Preserve the SEM (topological) key order and drop the latent Z_conf_* keys.
+    # Iterating base_graph.variables (numeric order) instead would put D_O keys
+    # out of topological order, which breaks DoublyRobustModel.run_method's
+    # groundtruth indexing when a true parent is the highest-indexed variable.
+    base_vars = set(base_graph.variables)
+    D_O = {v: D_O_full[v] for v in D_O_full if v in base_vars}
     return D_O, meta

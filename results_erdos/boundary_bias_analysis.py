@@ -104,7 +104,10 @@ def confounder_classifier(result):
     (backward-compatible with the pre-confounder pickles).
     """
     true_parents = set(result.get("True_Parents", ()))
-    confounded_x = {c["x"] for c in result.get("Confounders", [])}
+    # control entries (no_confounder runs) carry the same X but no actual Z
+    confounded_x = {
+        c["x"] for c in result.get("Confounders", []) if not c.get("control")
+    }
 
     def classify(var):
         is_parent = var in true_parents

@@ -105,7 +105,16 @@ def parse_args():
     p.add_argument("--w_zy", type=float, default=2.0)
     p.add_argument("--sigma_z", type=float, default=1.0)
     p.add_argument("--seed_x", action="store_true", default=True,
-                   help="seed X into the candidate posterior so its behaviour is observable")
+                   help="seed X into the candidate posterior at small mass")
+    p.add_argument("--force_x", action="store_true",
+                   help="oracle-force X as the sole candidate so it is intervened every "
+                        "trial (guarantees observability; needed for DREAM where the "
+                        "nonlinear collapse prunes a merely-seeded X)")
+    p.add_argument("--no_confounder", action="store_true",
+                   help="control run: clean observational data (no hidden Z) but same X, "
+                        "to isolate the confounding effect on X's boundary behaviour")
+    p.add_argument("--tag", type=str, default="",
+                   help="suffix for the results subdir, e.g. conf / ctrl")
     p.add_argument("--inject_prob", type=float, default=0.1)
     p.add_argument("--seeds_replicate", type=int, default=71)
     p.add_argument("--n_observational", type=int, default=200)
@@ -130,16 +139,9 @@ def run(args):
         f"{x_var in set(true_parents)})"
     )
 
-    confounders = [
-        {"x": x_var, "w_zx": args.w_zx, "w_zy": args.w_zy, "sigma_z": args.sigma_z}
-    ]
-
-    # confounded observational data (hidden Z stripped); interventional data +
-    # exploration set from the base graph (interventions are unconfounded)
-    D_O, conf_meta = generate_confounded_observational_data(
-        base_graph, confounders, n_obs=args.n_observational, seed=args.seeds_replicate
-    )
-    _, D_I, exploration_set = setup_observational_interventional(
+    # interventional data + exploration set from the base graph (interventions
+    # are unconfounded either way)
+    D_O_base, D_I, exploration_set = setup_observational_interventional(
         graph_type=None,
         noiseless=args.noiseless,
         seed=args.seeds_replicate,
@@ -147,6 +149,29 @@ def run(args):
         n_int=args.n_int,
         graph=base_graph,
     )
+
+    if args.no_confounder:
+        # CONTROL: clean observational data, no hidden Z, same X
+        D_O = D_O_base
+        conf_meta = [
+            {
+                "x": x_var,
+                "z_name": None,
+                "w_zx": 0.0,
+                "w_zy": 0.0,
+                "sigma_z": 0.0,
+                "is_true_parent": x_var in set(true_parents),
+                "control": True,
+            }
+        ]
+    else:
+        confounders = [
+            {"x": x_var, "w_zx": args.w_zx, "w_zy": args.w_zy, "sigma_z": args.sigma_z}
+        ]
+        # confounded observational data (hidden Z stripped)
+        D_O, conf_meta = generate_confounded_observational_data(
+            base_graph, confounders, n_obs=args.n_observational, seed=args.seeds_replicate
+        )
 
     # quick sanity: X-Y correlation is present in the confounded observational data
     try:
@@ -160,7 +185,14 @@ def run(args):
     )
     model.set_values(D_O, D_I, exploration_set)
 
-    if args.seed_x:
+    if args.force_x:
+        # oracle-force X as the sole candidate -> intervened every trial. Its
+        # do-effect is fit from D_O (confounded => spurious slope; control =>
+        # flat for a non-parent), so this cleanly isolates whether the
+        # confounded prior drives boundary-seeking on X.
+        model.determine_initial_probabilities = lambda: {(x_var,): 1.0}
+        logging.info(f"FORCE: X=({x_var},) forced as the sole candidate")
+    elif args.seed_x:
         original_init = model.determine_initial_probabilities
 
         def seeded_initial_probabilities():
@@ -208,10 +240,13 @@ def run(args):
         "Target": target,
         "Confounders": conf_meta,
         "X_Kind": args.x_kind,
+        "Control": args.no_confounder,
+        "Forced": args.force_x,
         "Dream": is_dream,
     }
 
-    results_dir = f"results/boundary_tracking_confounded/{args.graph_type}_{args.x_kind}"
+    subdir = f"{args.graph_type}_{args.x_kind}" + (f"_{args.tag}" if args.tag else "")
+    results_dir = f"results/boundary_tracking_confounded/{subdir}"
     os.makedirs(results_dir, exist_ok=True)
     ns = "_nonlinear" if nonlinear else ""
     base = f"run{args.run_num}_cbo_confounded_dr2_boundary_{args.n_observational}_{args.n_int}{ns}"
