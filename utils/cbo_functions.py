@@ -18,6 +18,7 @@ from utils.cbo_classes import (
     CausalExpectedImprovement,
     CausalGradientAcquisitionOptimizer,
     CausalRBF,
+    CausalUpperConfidenceBound,
     Cost,
     DoFunctions,
 )
@@ -219,9 +220,13 @@ def get_new_x_y_list(
     model_list: List,
     cost_functions: OrderedDict,
     task: str = "min",
+    acquisition: str = "EI",
+    ucb_beta: float = 2.0,
 ) -> Tuple[np.ndarray, List[List[float]]]:
     """
-    Get the new acquisitions for the all the elements in the exploration set
+    Get the new acquisitions for the all the elements in the exploration set.
+    acquisition: "EI" (causal expected improvement) or "UCB" (causal confidence
+    bound).
     """
     y_acquisition_list = [None] * len(exploration_set)
     x_new_list = [None] * len(exploration_set)
@@ -232,9 +237,14 @@ def get_new_x_y_list(
         # acquisition = (
         #     CausalExpectedImprovement(current_global_min, task, model_list[j]) / cost
         # )
-        acquisition = CausalExpectedImprovement(current_global_min, task, model_list[j])
-        x_new, _ = optimizer.optimize(acquisition)
-        y_acquisition = acquisition.evaluate(x_new).flatten()
+        if acquisition.upper() == "UCB":
+            acq = CausalUpperConfidenceBound(
+                current_global_min, task, model_list[j], beta=ucb_beta
+            )
+        else:
+            acq = CausalExpectedImprovement(current_global_min, task, model_list[j])
+        x_new, _ = optimizer.optimize(acq)
+        y_acquisition = acq.evaluate(x_new).flatten()
         y_acquisition_list[j] = y_acquisition
         x_new_list[j] = x_new
 

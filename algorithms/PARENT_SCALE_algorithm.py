@@ -57,13 +57,17 @@ class PARENT_SCALE(BASE):
         use_doubly_robust: bool = True,
         use_iscm: bool = False,
         boundary_eps_frac: float = 0.01,
+        acquisition: str = "EI",
+        ucb_beta: float = 2.0,
     ):
         self.graph = graph
         self.num_nodes = len(self.graph.variables)
         self.variables = self.graph.variables
         self.target = self.graph.target
         self.nonlinear = nonlinear
-        # self.acquisition_strategy = acquisition_strategy
+        # acquisition function for get_new_x_y_list: "EI" or "UCB"
+        self.acquisition = acquisition
+        self.ucb_beta = ucb_beta
 
         # setting up some more variables
         # self.graph_env = graph_env
@@ -478,6 +482,8 @@ class PARENT_SCALE(BASE):
                 current_global_min,
                 self.model_list_overall,
                 cost_functions,
+                acquisition=self.acquisition,
+                ucb_beta=self.ucb_beta,
             )
 
             # find the optimal intervention, which maximises the acquisition function

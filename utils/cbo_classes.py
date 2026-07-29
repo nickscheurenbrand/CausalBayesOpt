@@ -524,6 +524,54 @@ class CausalExpectedImprovement(Acquisition):
         return isinstance(self.model, IDifferentiable)
 
 
+class CausalUpperConfidenceBound(Acquisition):
+    """
+    Causal (Lower/Upper) Confidence Bound acquisition, matching the
+    CausalExpectedImprovement interface so it is a drop-in in get_new_x_y_list.
+
+    The acquisition optimiser MAXIMISES evaluate(x). For task == "min" we want
+    points with LOW predicted mean and HIGH uncertainty, i.e. maximise
+    beta*std - mean (the negative lower confidence bound). For task == "max" we
+    maximise the usual UCB mean + beta*std.
+    """
+
+    def __init__(
+        self,
+        current_global_min: float,
+        task: str,
+        model: Union[IModel, IDifferentiable],
+        beta: float = 2.0,
+    ) -> None:
+        self.model = model
+        self.task = task
+        self.beta = beta
+        self.current_global_min = current_global_min  # kept for interface parity
+
+    def evaluate(self, x: np.ndarray) -> np.ndarray:
+        mean, variance = self.model.predict(x)
+        standard_deviation = np.sqrt(variance)
+        if self.task == "min":
+            return self.beta * standard_deviation - mean
+        return mean + self.beta * standard_deviation
+
+    def evaluate_with_gradients(self, x: np.ndarray) -> Tuple:
+        mean, variance = self.model.predict(x)
+        standard_deviation = np.sqrt(variance)
+        dmean_dx, dvariance_dx = self.model.get_prediction_gradients(x)
+        dstandard_deviation_dx = dvariance_dx / (2 * standard_deviation)
+        if self.task == "min":
+            value = self.beta * standard_deviation - mean
+            dvalue_dx = self.beta * dstandard_deviation_dx - dmean_dx
+        else:
+            value = mean + self.beta * standard_deviation
+            dvalue_dx = dmean_dx + self.beta * dstandard_deviation_dx
+        return value, dvalue_dx
+
+    @property
+    def has_gradients(self) -> bool:
+        return isinstance(self.model, IDifferentiable)
+
+
 def get_standard_normal_pdf_cdf(
     x: np.array, mean: np.array, standard_deviation: np.array
 ) -> Tuple[np.array, np.array, np.array]:

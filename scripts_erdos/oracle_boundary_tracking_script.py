@@ -100,6 +100,7 @@ def run_oracle_boundary_tracking(
     n_int: int,
     n_trials: int,
     nonlinear: bool,
+    acquisition: str = "EI",
 ):
     nonlinear_string = "_nonlinear" if nonlinear else ""
     graph = set_graph(graph_type, nonlinear=nonlinear)
@@ -124,6 +125,7 @@ def run_oracle_boundary_tracking(
         nonlinear=nonlinear,
         individual=True,
         use_doubly_robust=True,
+        acquisition=acquisition,
     )
     model.set_values(D_O, D_I, exploration_set)
 
@@ -171,7 +173,8 @@ def run_oracle_boundary_tracking(
     results_dir = f"results/boundary_tracking_oracle/{graph_type}"
     os.makedirs(results_dir, exist_ok=True)
     base_name = (
-        f"run{run_num}_cbo_unknown_dr2_boundary_{n_obs}_{n_int}{nonlinear_string}"
+        f"run{run_num}_cbo_unknown_dr2_boundary_{acquisition}_"
+        f"{n_obs}_{n_int}{nonlinear_string}"
     )
     filename_pickle = f"{results_dir}/{base_name}.pickle"
     with open(filename_pickle, "wb") as file:
@@ -198,4 +201,5 @@ if __name__ == "__main__":
         n_int=2,
         n_trials=args.n_trials,
         nonlinear=args.nonlinear,
+        acquisition=args.acquisition,
     )
