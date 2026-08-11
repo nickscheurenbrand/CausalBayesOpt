@@ -59,6 +59,7 @@ class PARENT_SCALE(BASE):
         boundary_eps_frac: float = 0.01,
         acquisition: str = "EI",
         ucb_beta: float = 2.0,
+        kernel_type: str = "rbf",
     ):
         self.graph = graph
         self.num_nodes = len(self.graph.variables)
@@ -68,6 +69,8 @@ class PARENT_SCALE(BASE):
         # acquisition function for get_new_x_y_list: "EI" or "UCB"
         self.acquisition = acquisition
         self.ucb_beta = ucb_beta
+        # surrogate GP kernel: "rbf" (default) or "spherical_linear"
+        self.kernel_type = kernel_type
 
         # setting up some more variables
         # self.graph_env = graph_env
@@ -464,6 +467,7 @@ class PARENT_SCALE(BASE):
             input_space,
             self.do_effects_functions,
             self.posterior,
+            kernel_type=self.kernel_type,
         )
         # iteration-0 snapshot of the posterior over parent sets
         self.posterior_history.append(dict(zip(self.graphs.keys(), self.posterior)))
@@ -611,6 +615,7 @@ class PARENT_SCALE(BASE):
                 input_space,
                 self.do_effects_functions,
                 self.posterior,
+                kernel_type=self.kernel_type,
             )
             current_global_min = global_opt[i]
 
