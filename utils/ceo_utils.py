@@ -293,6 +293,7 @@ def update_posterior_model_aggregate_2(
     input_space: List,
     do_function_list: List[List[DoFunctions]],
     posterior: np.ndarray,
+    kernel_type: str = "rbf",
 ) -> List[GPyModelWrapper]:
     """
     Update the posterior of the gaussian process if it was intervened on in the previous timestep
@@ -309,7 +310,13 @@ def update_posterior_model_aggregate_2(
         mean_function = partial(aggregate_mean_function, j, do_function_list, posterior)
         var_function = partial(aggregate_var_function, j, do_function_list, posterior)
         model_list[j] = set_up_GP(
-            causal_prior, input_space[j], mean_function, var_function, X, Y
+            causal_prior,
+            input_space[j],
+            mean_function,
+            var_function,
+            X,
+            Y,
+            kernel_type=kernel_type,
         )
 
     return model_list

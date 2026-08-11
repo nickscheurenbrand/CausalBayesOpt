@@ -1,33 +1,19 @@
 """
-ORACLE variant of boundary_tracking_script.py: confound-closing experiment.
+Same as boundary_tracking_script.py (CBO-U, PARENT_SCALE dr2 on Erdos-Renyi
+graphs, tracking the intervention-boundary percentage and the parent-set
+posterior), but the surrogate GP uses a spherical (stereographic-projection)
+kernel instead of the plain RBF core.
 
-The non-oracle runs showed a strong boundary bias in the intervention values
-ONLY on true-parent variables, and none on Erdos100 -- but in those 3 runs
-"true parent" is perfectly confounded with "small/medium graph" (all
-true-parent interventions came from Erdos20/50, all non-parent ones from
-Erdos100). So we cannot yet tell whether Erdos100 lacks boundary bias because
-it is large, or simply because its collapsed posterior made it intervene on
-non-parents.
+Choose the projected kernel with --kernel:
+  * spherical_linear (default): linear/dot-product kernel on the projected
+    features (results/boundary_tracking_spherical/)
+  * spherical_rbf: RBF kernel on the projected features
+    (results/boundary_tracking_spherical_rbf/)
 
-This script removes the confound by forcing the parent posterior to the TRUE
-parent set (probability 1.0), bypassing the doubly-robust bootstrap entirely,
-while keeping EVERYTHING ELSE identical -- same PARENT_SCALE acquisition, same
-GP surrogates, same boundary tracking. The exploration set then becomes exactly
-the true parents (as singletons), so Erdos100 is guaranteed to intervene on
-its real parents. If boundary bias appears here, the boundary mechanism works
-at scale and the earlier absence was entirely downstream of the posterior
-failure.
-
-The injection point is determine_initial_probabilities() -- the single place
-the candidate parent-set posterior is created. define_all_possible_graphs()
-then rebuilds the correct local structure around the target from it via
-graph.mispecify_graph(edges). Since there is only one hypothesis at prob 1.0,
-every subsequent per-trial posterior update leaves it at 1.0, so the
-exploration set stays pinned to the true parents for the whole run.
-
-Output pickle format is IDENTICAL to boundary_tracking_script.py (so
-boundary_bias_analysis.py --results_subdir boundary_tracking_oracle works on
-it), saved under results/boundary_tracking_oracle/{graph_type}/.
+Only the surrogate kernel changes -- everything else (causal prior, do-mean/
+do-variance, acquisition, boundary tracking) is identical, and results are
+written under a kernel-specific subdir so they do not collide with the RBF
+baseline or with each other.
 """
 
 import argparse
@@ -46,10 +32,15 @@ if os.environ.get("CUDA_VISIBLE_DEVICES", "").startswith("GPU-"):
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 if os.getcwd() not in sys.path:
     sys.path.append(os.getcwd())
+# the graphs package now lives under algorithms/, but modules import `graphs.*`
 _algorithms_path = os.path.join(os.getcwd(), "algorithms")
 if _algorithms_path not in sys.path:
     sys.path.append(_algorithms_path)
 
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import numpy as np
 
 from algorithms.PARENT_SCALE_algorithm import PARENT_SCALE
@@ -64,11 +55,10 @@ logging.basicConfig(
     datefmt="%m/%d/%Y %I:%M:%S %p",
 )
 
-# results-subdir suffix for each surrogate kernel ("rbf" keeps the original path)
-KERNEL_SUFFIX = {
-    "rbf": "",
-    "spherical_linear": "_spherical",
-    "spherical_rbf": "_spherical_rbf",
+# results subdirectory for each supported projected kernel
+RESULTS_SUBDIRS = {
+    "spherical_linear": "boundary_tracking_spherical",
+    "spherical_rbf": "boundary_tracking_spherical_rbf",
 }
 
 
@@ -87,6 +77,10 @@ def set_graph(graph_type: str, nonlinear: bool = False) -> GraphStructure:
 
 
 def compute_p_true_parents(posterior_history, true_parents):
+    """
+    Extracts the posterior probability assigned to the true parent set at
+    each iteration (0.0 if the true parent set has been pruned / is absent)
+    """
     true_parents_set = set(true_parents)
     p_true = []
     for posterior in posterior_history:
@@ -99,7 +93,41 @@ def compute_p_true_parents(posterior_history, true_parents):
     return p_true
 
 
-def run_oracle_boundary_tracking(
+def plot_boundary_percentage(boundary_percentages, graph_type, filename):
+    iterations = np.arange(1, len(boundary_percentages) + 1)
+    running_mean = np.cumsum(boundary_percentages) / iterations
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.scatter(
+        iterations, boundary_percentages, alpha=0.4, label="Per-iteration boundary %"
+    )
+    ax.plot(iterations, running_mean, color="tab:red", label="Running mean")
+    ax.set_xlabel("Iteration")
+    ax.set_ylabel("Boundary percentage")
+    ax.set_ylim(-0.05, 1.05)
+    ax.set_title(f"Intervention boundary percentage ({graph_type}, spherical-linear)")
+    ax.legend()
+    fig.savefig(filename, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_p_true_parents(p_true_parents, graph_type, filename):
+    # iteration 0 is the initial posterior before any intervention
+    iterations = np.arange(len(p_true_parents))
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.plot(iterations, p_true_parents, marker="o")
+    ax.set_xlabel("Iteration")
+    ax.set_ylabel("P(true parents)")
+    ax.set_ylim(-0.05, 1.05)
+    ax.set_title(
+        f"Posterior probability of true parent set ({graph_type}, spherical-linear)"
+    )
+    fig.savefig(filename, bbox_inches="tight")
+    plt.close(fig)
+
+
+def run_boundary_tracking(
     graph_type: str,
     run_num: int,
     noiseless: bool,
@@ -109,8 +137,9 @@ def run_oracle_boundary_tracking(
     n_trials: int,
     nonlinear: bool,
     acquisition: str = "EI",
-    kernel_type: str = "rbf",
+    kernel_type: str = "spherical_linear",
 ):
+    results_subdir = RESULTS_SUBDIRS[kernel_type]
     nonlinear_string = "_nonlinear" if nonlinear else ""
     graph = set_graph(graph_type, nonlinear=nonlinear)
     D_O, D_I, exploration_set = setup_observational_interventional(
@@ -122,13 +151,6 @@ def run_oracle_boundary_tracking(
         graph=graph,
     )
 
-    true_parents = tuple(graph.parents[graph.target])
-    logging.info(f"ORACLE: forcing parent posterior to true parents {true_parents}")
-    if len(true_parents) == 0:
-        raise ValueError(
-            f"target {graph.target} has no parents; oracle run is undefined"
-        )
-
     model = PARENT_SCALE(
         graph=graph,
         nonlinear=nonlinear,
@@ -138,17 +160,6 @@ def run_oracle_boundary_tracking(
         kernel_type=kernel_type,
     )
     model.set_values(D_O, D_I, exploration_set)
-
-    # ---- ORACLE INJECTION ----
-    # Replace the bootstrap parent-identification with a point mass on the
-    # true parent set. This is the ONLY behavioural difference from
-    # boundary_tracking_script.py.
-    def _oracle_initial_probabilities():
-        return {true_parents: 1.0}
-
-    model.determine_initial_probabilities = _oracle_initial_probabilities
-    # --------------------------
-
     (
         best_y_array,
         current_y_array,
@@ -158,6 +169,7 @@ def run_oracle_boundary_tracking(
         average_uncertainty,
     ) = model.run_algorithm(T=n_trials, show_graphics=False)
 
+    true_parents = tuple(graph.parents[graph.target])
     p_true_parents = compute_p_true_parents(model.posterior_history, true_parents)
     intervention_ranges = {
         var: list(bounds) for var, bounds in graph.interventional_range_data.items()
@@ -177,30 +189,37 @@ def run_oracle_boundary_tracking(
         "True_Parents": true_parents,
         "Intervention_Ranges": intervention_ranges,
         "Epsilon_Fraction": model.boundary_eps_frac,
-        "Oracle": True,
         "Kernel_Type": kernel_type,
+        # full structure so the confounder classifier works on these runs too
+        "Edges": list(graph.edges),
+        "Parents": {v: list(graph.parents[v]) for v in graph.variables},
+        "Variables": list(graph.variables),
+        "Target": graph.target,
     }
 
-    results_dir = (
-        f"results/boundary_tracking_oracle{KERNEL_SUFFIX[kernel_type]}/{graph_type}"
-    )
+    results_dir = f"results/{results_subdir}/{graph_type}"
     os.makedirs(results_dir, exist_ok=True)
     base_name = (
         f"run{run_num}_cbo_unknown_dr2_boundary_{acquisition}_"
         f"{n_obs}_{n_int}{nonlinear_string}"
     )
+
     filename_pickle = f"{results_dir}/{base_name}.pickle"
     with open(filename_pickle, "wb") as file:
         pickle.dump(results_dict, file)
-    logging.info(f"Saved ORACLE results to {filename_pickle}")
+    logging.info(f"Saved results to {filename_pickle}")
 
-    # quick inline summary so the log is self-contained
-    boundary = np.array(model.boundary_percentages, dtype=float)
-    logging.info(
-        f"ORACLE {graph_type}: mean strict boundary% = {boundary.mean():.3f} "
-        f"over {len(boundary)} trials; intervened variables = "
-        f"{sorted(set(v for s in intervention_set for v in s))}"
+    plot_boundary_percentage(
+        model.boundary_percentages,
+        graph_type,
+        f"{results_dir}/{base_name}_boundary_percentage.png",
     )
+    plot_p_true_parents(
+        p_true_parents,
+        graph_type,
+        f"{results_dir}/{base_name}_p_true_parents.png",
+    )
+    logging.info(f"Saved plots to {results_dir}")
 
 
 if __name__ == "__main__":
@@ -209,10 +228,15 @@ if __name__ == "__main__":
     # ignored there and does not clash with the shared argument parser.
     kernel_parser = argparse.ArgumentParser(add_help=False)
     kernel_parser.add_argument(
-        "--kernel", type=str, default="rbf", choices=list(KERNEL_SUFFIX.keys())
+        "--kernel",
+        type=str,
+        default="spherical_linear",
+        choices=list(RESULTS_SUBDIRS.keys()),
+        help="Projected surrogate kernel to use.",
     )
     kernel_args, _ = kernel_parser.parse_known_args()
-    run_oracle_boundary_tracking(
+
+    run_boundary_tracking(
         graph_type=args.graph_type,
         run_num=args.run_num,
         noiseless=args.noiseless,

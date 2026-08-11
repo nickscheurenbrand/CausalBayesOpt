@@ -17,6 +17,7 @@ from emukit.core.optimization.optimizer import (
     apply_optimizer,
 )
 from GPy.core import Param
+from GPy.kern.src.kern import Kern
 from GPy.kern.src.psi_comp import PSICOMP_RBF, PSICOMP_RBF_GPU
 from GPy.kern.src.stationary import Stationary
 from paramz.transformations import Logexp
@@ -302,6 +303,347 @@ class CausalRBF(Stationary):
             self.inv_l.gradient = self.lengthscale.gradient * (
                 self.lengthscale**3 / -2.0
             )
+
+
+class CausalSphericalLinear(Kern):
+    r"""
+    Spherical-linear surrogate kernel: an inverse stereographic projection of
+    the (centred, lengthscale-scaled) inputs onto the unit sphere followed by a
+    linear (dot-product) kernel with learnable constant/linear term weights and
+    a global lengthscale.  This is a GPy port of the BoTorch/gpytorch
+    ``SphericalLinearKernel`` (see ``spherical_linear.py``) so it drops into the
+    existing GPy surrogate pipeline in place of the RBF core.
+
+    Same do-variance adjustment as :class:`CausalRBF`, so the causal prior is
+    preserved -- only the RBF core is swapped for the spherical-linear core::
+
+        K(x, x') = variance * <phi(x), phi(x')>
+                   + sqrt(vadj(x)) * sqrt(vadj(x'))
+
+    where ``phi: R^D -> R^{D+2}`` maps ``x`` via the stereographic projection
+    (which lands on the unit sphere, so ``||phi(x)|| = 1`` and ``K(x, x) =
+    variance`` exactly like the RBF).
+
+    As requested, only the outer ``variance`` is optimised.  The projection
+    shape parameters (per-dimension ``lengthscale``, term ``coeffs`` and the
+    global-lengthscale fraction) are fixed at their init values.  ``lengthscale``
+    is registered (constrained fixed) purely so ``safe_optimization`` can read
+    ``kern.lengthscale[0]``.
+    """
+
+    def __init__(
+        self,
+        input_dim: int,
+        variance_adjustment: Callable,
+        variance: float = 1.0,
+        lengthscale: float = 1.0,
+        bounds: np.ndarray = None,
+        coeffs: Tuple[float, float] = (0.5, 0.5),
+        glob_ls_frac: float = 0.5,
+        active_dims=None,
+        name: str = "spherical_linear",
+    ):
+        super(CausalSphericalLinear, self).__init__(input_dim, active_dims, name)
+
+        self.variance = Param("variance", variance, Logexp())
+        self.link_parameter(self.variance)
+
+        # lengthscale kept as a (fixed) parameter so that safe_optimization can
+        # index kern.lengthscale[0]; it is never optimised.
+        ls = np.asarray(lengthscale, dtype=float)
+        if ls.ndim == 0:
+            ls = np.full(input_dim, float(ls))
+        self.lengthscale = Param("lengthscale", ls, Logexp())
+        self.link_parameter(self.lengthscale)
+        self.lengthscale.fix(warning=False)
+
+        self.variance_adjustment = variance_adjustment
+
+        # fixed projection geometry
+        if bounds is None:
+            bounds = np.tile(np.array([0.0, 1.0]), (input_dim, 1))
+        bounds = np.asarray(bounds, dtype=float)
+        self._mins = bounds[:, 0]
+        self._maxs = bounds[:, 1]
+        self._centers = 0.5 * (self._mins + self._maxs)
+
+        # constant/linear term weights (normalised to sum to one, as in softmax)
+        c = np.asarray(coeffs, dtype=float)
+        c = c / c.sum()
+        self._term0 = float(c[0])
+        self._term1 = float(c[1])
+        self._glob_ls_frac = float(glob_ls_frac)
+
+    # ---- projection helpers -------------------------------------------------
+    def _glob_ls(self, ls: np.ndarray) -> float:
+        """Global lengthscale ~ O(sqrt(D)) from the input span (see BoTorch)."""
+        half_span = (self._maxs - self._mins) / (2.0 * ls)
+        max_sq_norm = np.sum(half_span**2)
+        return float(np.sqrt(self._glob_ls_frac * max_sq_norm))
+
+    def _project(self, X: np.ndarray):
+        """Return z (N, D), p = 1/(1+||z||^2) (N,) and phi (N, D+2)."""
+        ls = np.asarray(self.lengthscale)
+        glob_ls = self._glob_ls(ls)
+        z = (X - self._centers) / ls / glob_ls
+        s = np.sum(z**2, axis=1)
+        p = 1.0 / (1.0 + s)
+        # inverse stereographic projection onto the unit sphere (R^{D+1})
+        proj = np.concatenate(
+            [2.0 * z * p[:, None], ((s - 1.0) * p)[:, None]], axis=1
+        )
+        n = X.shape[0]
+        phi = np.concatenate(
+            [
+                np.sqrt(self._term1) * proj,
+                np.full((n, 1), np.sqrt(self._term0)),
+            ],
+            axis=1,
+        )
+        return z, p, phi, glob_ls
+
+    def _phi(self, X: np.ndarray) -> np.ndarray:
+        return self._project(X)[2]
+
+    # ---- kernel evaluations -------------------------------------------------
+    def K(self, X: np.ndarray, X2: np.ndarray = None) -> np.ndarray:
+        phi1 = self._phi(X)
+        phi2 = phi1 if X2 is None else self._phi(X2)
+        value = float(self.variance) * (phi1 @ phi2.T)
+
+        # do-variance adjustment (identical to CausalRBF)
+        value_diagonal_X = self.variance_adjustment(X)
+        value_diagonal_X2 = (
+            value_diagonal_X if X2 is None else self.variance_adjustment(X2)
+        )
+        additional_matrix = np.outer(
+            np.sqrt(value_diagonal_X), np.sqrt(value_diagonal_X2)
+        )
+        return value + additional_matrix
+
+    def Kdiag(self, X: np.ndarray) -> np.ndarray:
+        # <phi(x), phi(x)> == 1 (unit sphere), so the core diagonal is `variance`
+        value = self.variance_adjustment(X)
+        if X.shape[0] == 1 and X.shape[1] == 1:
+            diagonal_terms = value
+        elif np.isscalar(value):
+            diagonal_terms = value
+        elif np.ndim(value) >= 2:
+            diagonal_terms = value[:, 0]
+        else:
+            diagonal_terms = value
+        return float(self.variance) + diagonal_terms
+
+    # ---- gradients wrt hyperparameters (only `variance` is free) ------------
+    def update_gradients_full(self, dL_dK, X, X2=None):
+        phi1 = self._phi(X)
+        phi2 = phi1 if X2 is None else self._phi(X2)
+        core = phi1 @ phi2.T  # dK/dvariance
+        self.variance.gradient = np.sum(dL_dK * core)
+        self.lengthscale.gradient = np.zeros_like(np.asarray(self.lengthscale))
+
+    def update_gradients_diag(self, dL_dKdiag, X):
+        # dKdiag/dvariance == 1 for every point
+        self.variance.gradient = np.sum(dL_dKdiag)
+        self.lengthscale.gradient = np.zeros_like(np.asarray(self.lengthscale))
+
+    # ---- gradients wrt inputs (needed by the acquisition optimizer) ---------
+    def _dphi_dx(self, X: np.ndarray):
+        """Jacobian d proj / dx of the projected features, shape (N, D, D+1)."""
+        z, p, _, glob_ls = self._project(X)
+        ls = np.asarray(self.lengthscale)
+        n, d = X.shape
+        p2 = p**2
+
+        # derivative of proj wrt z: Dz[n, q, k], k in 0..D (D+1 features)
+        Dz = np.zeros((n, d, d + 1))
+        idx = np.arange(d)
+        Dz[:, idx, idx] += 2.0 * p[:, None]  # 2 p delta_{kq}
+        Dz[:, :, :d] += -4.0 * (z[:, :, None] * z[:, None, :]) * p2[:, None, None]
+        Dz[:, :, d] += 4.0 * z * p2[:, None]  # d proj_D / dz_q
+
+        # chain rule z = (x - c) / ls / glob_ls  ->  dz_q/dx_q = 1/(ls_q glob_ls)
+        inv_gl = 1.0 / (ls * glob_ls)  # (D,)
+        # d phi_{0..D} / dx = sqrt(term1) * inv_gl_q * Dz
+        return np.sqrt(self._term1) * Dz * inv_gl[None, :, None]
+
+    def gradients_X(self, dL_dK, X, X2=None):
+        phi2 = self._phi(X) if X2 is None else self._phi(X2)
+        dproj = self._dphi_dx(X)  # (N, D, D+1)
+        # W[n, k] = sum_m dL_dK[n, m] * phi2[m, k], only the first D+1 features
+        # contract with the projected Jacobian (the constant term is flat)
+        W = dL_dK @ phi2[:, : dproj.shape[2]]  # (N, D+1)
+        grad = float(self.variance) * np.einsum("nqk,nk->nq", dproj, W)
+        return grad
+
+    def gradients_X_diag(self, dL_dKdiag, X):
+        # core diagonal is constant (unit sphere), so its input-gradient is zero
+        return np.zeros_like(X)
+
+    def to_dict(self):
+        input_dict = super(CausalSphericalLinear, self)._save_to_input_dict()
+        input_dict["class"] = "utils.cbo_classes.CausalSphericalLinear"
+        return input_dict
+
+
+class CausalSphericalRBF(Kern):
+    r"""
+    Spherical-RBF surrogate kernel: the same inverse stereographic projection
+    onto the unit sphere as :class:`CausalSphericalLinear`, but with an RBF
+    (squared-exponential) kernel applied to the projected features instead of a
+    linear (dot-product) one::
+
+        K(x, x') = variance * exp(-0.5 * ||proj(x) - proj(x')||^2 / l^2)
+                   + sqrt(vadj(x)) * sqrt(vadj(x'))
+
+    ``proj: R^D -> R^{D+1}`` lands on the unit sphere, so ``K(x, x) = variance``
+    exactly like the RBF and spherical-linear cores, and the do-variance
+    adjustment of :class:`CausalRBF` plugs in identically (causal prior kept).
+
+    The projection geometry (per-dimension ``proj_lengthscale`` and the global
+    lengthscale) is fixed at init.  The outer ``variance`` and the RBF
+    ``lengthscale`` are optimised -- the RBF lengthscale is cheap to fit because
+    the projected features do not depend on it.
+    """
+
+    def __init__(
+        self,
+        input_dim: int,
+        variance_adjustment: Callable,
+        variance: float = 1.0,
+        lengthscale: float = 1.0,
+        proj_lengthscale: float = 1.0,
+        bounds: np.ndarray = None,
+        glob_ls_frac: float = 0.5,
+        active_dims=None,
+        name: str = "spherical_rbf",
+    ):
+        super(CausalSphericalRBF, self).__init__(input_dim, active_dims, name)
+
+        self.variance = Param("variance", variance, Logexp())
+        self.link_parameter(self.variance)
+        # RBF lengthscale on the projected (unit-sphere) features -- optimised
+        self.lengthscale = Param("lengthscale", float(lengthscale), Logexp())
+        self.link_parameter(self.lengthscale)
+
+        self.variance_adjustment = variance_adjustment
+
+        # fixed projection geometry
+        pls = np.asarray(proj_lengthscale, dtype=float)
+        if pls.ndim == 0:
+            pls = np.full(input_dim, float(pls))
+        self._proj_lengthscale = pls
+        if bounds is None:
+            bounds = np.tile(np.array([0.0, 1.0]), (input_dim, 1))
+        bounds = np.asarray(bounds, dtype=float)
+        self._mins = bounds[:, 0]
+        self._maxs = bounds[:, 1]
+        self._centers = 0.5 * (self._mins + self._maxs)
+        self._glob_ls_frac = float(glob_ls_frac)
+
+    # ---- projection helpers -------------------------------------------------
+    def _glob_ls(self) -> float:
+        half_span = (self._maxs - self._mins) / (2.0 * self._proj_lengthscale)
+        return float(np.sqrt(self._glob_ls_frac * np.sum(half_span**2)))
+
+    def _project(self, X: np.ndarray):
+        """Return z (N, D), p = 1/(1+||z||^2) (N,), proj (N, D+1), glob_ls."""
+        glob_ls = self._glob_ls()
+        z = (X - self._centers) / self._proj_lengthscale / glob_ls
+        s = np.sum(z**2, axis=1)
+        p = 1.0 / (1.0 + s)
+        proj = np.concatenate(
+            [2.0 * z * p[:, None], ((s - 1.0) * p)[:, None]], axis=1
+        )
+        return z, p, proj, glob_ls
+
+    @staticmethod
+    def _sq_dist(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+        sq = (
+            np.sum(a**2, axis=1)[:, None]
+            + np.sum(b**2, axis=1)[None, :]
+            - 2.0 * (a @ b.T)
+        )
+        return np.maximum(sq, 0.0)
+
+    def _dproj_dx(self, X: np.ndarray) -> np.ndarray:
+        """Jacobian d proj / dx, shape (N, D, D+1)."""
+        z, p, _, glob_ls = self._project(X)
+        n, d = X.shape
+        p2 = p**2
+        Dz = np.zeros((n, d, d + 1))
+        idx = np.arange(d)
+        Dz[:, idx, idx] += 2.0 * p[:, None]
+        Dz[:, :, :d] += -4.0 * (z[:, :, None] * z[:, None, :]) * p2[:, None, None]
+        Dz[:, :, d] += 4.0 * z * p2[:, None]
+        inv_gl = 1.0 / (self._proj_lengthscale * glob_ls)  # dz_q/dx_q
+        return Dz * inv_gl[None, :, None]
+
+    # ---- kernel evaluations -------------------------------------------------
+    def K(self, X: np.ndarray, X2: np.ndarray = None) -> np.ndarray:
+        proj1 = self._project(X)[2]
+        proj2 = proj1 if X2 is None else self._project(X2)[2]
+        ls = float(self.lengthscale)
+        r2 = self._sq_dist(proj1, proj2)
+        value = float(self.variance) * np.exp(-0.5 * r2 / ls**2)
+
+        value_diagonal_X = self.variance_adjustment(X)
+        value_diagonal_X2 = (
+            value_diagonal_X if X2 is None else self.variance_adjustment(X2)
+        )
+        additional_matrix = np.outer(
+            np.sqrt(value_diagonal_X), np.sqrt(value_diagonal_X2)
+        )
+        return value + additional_matrix
+
+    def Kdiag(self, X: np.ndarray) -> np.ndarray:
+        value = self.variance_adjustment(X)
+        if X.shape[0] == 1 and X.shape[1] == 1:
+            diagonal_terms = value
+        elif np.isscalar(value):
+            diagonal_terms = value
+        elif np.ndim(value) >= 2:
+            diagonal_terms = value[:, 0]
+        else:
+            diagonal_terms = value
+        return float(self.variance) + diagonal_terms
+
+    # ---- gradients wrt hyperparameters (variance and RBF lengthscale) -------
+    def update_gradients_full(self, dL_dK, X, X2=None):
+        proj1 = self._project(X)[2]
+        proj2 = proj1 if X2 is None else self._project(X2)[2]
+        ls = float(self.lengthscale)
+        r2 = self._sq_dist(proj1, proj2)
+        expo = np.exp(-0.5 * r2 / ls**2)
+        core = float(self.variance) * expo
+        self.variance.gradient = np.sum(dL_dK * expo)
+        self.lengthscale.gradient = np.sum(dL_dK * core * r2 / ls**3)
+
+    def update_gradients_diag(self, dL_dKdiag, X):
+        # diagonal distance is zero, so only `variance` contributes
+        self.variance.gradient = np.sum(dL_dKdiag)
+        self.lengthscale.gradient = 0.0
+
+    # ---- gradients wrt inputs (needed by the acquisition optimizer) ---------
+    def gradients_X(self, dL_dK, X, X2=None):
+        proj1 = self._project(X)[2]
+        proj2 = proj1 if X2 is None else self._project(X2)[2]
+        ls = float(self.lengthscale)
+        r2 = self._sq_dist(proj1, proj2)
+        core = float(self.variance) * np.exp(-0.5 * r2 / ls**2)
+        G = dL_dK * core  # (N, M)
+        A = self._dproj_dx(X)  # (N, D, D+1)
+        # sum_m G[n,m] (proj1[n] - proj2[m]) contracted with the Jacobian
+        inner = G.sum(axis=1)[:, None] * proj1 - (G @ proj2)  # (N, D+1)
+        return (-1.0 / ls**2) * np.einsum("nqk,nk->nq", A, inner)
+
+    def gradients_X_diag(self, dL_dKdiag, X):
+        return np.zeros_like(X)
+
+    def to_dict(self):
+        input_dict = super(CausalSphericalRBF, self)._save_to_input_dict()
+        input_dict["class"] = "utils.cbo_classes.CausalSphericalRBF"
+        return input_dict
 
 
 class TargetClass:

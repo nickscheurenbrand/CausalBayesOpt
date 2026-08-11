@@ -92,7 +92,19 @@ def parse_args():
     p.add_argument("--noiseless", action="store_true")
     p.add_argument("--nonlinear", action="store_true")
     p.add_argument("--acquisition", type=str, default="EI", choices=["EI", "UCB"])
+    p.add_argument(
+        "--kernel", type=str, default="rbf",
+        choices=["rbf", "spherical_linear", "spherical_rbf"],
+    )
     return p.parse_args()
+
+
+# results-subdir suffix for each surrogate kernel ("rbf" keeps the original path)
+KERNEL_SUFFIX = {
+    "rbf": "",
+    "spherical_linear": "_spherical",
+    "spherical_rbf": "_spherical_rbf",
+}
 
 
 def run_oracle_dream(args):
@@ -123,6 +135,7 @@ def run_oracle_dream(args):
         individual=True,
         use_doubly_robust=True,
         acquisition=args.acquisition,
+        kernel_type=args.kernel,
     )
     model.set_values(D_O, D_I, exploration_set)
 
@@ -164,12 +177,16 @@ def run_oracle_dream(args):
         "Target": graph.target,
         "Dream": True,
         "Oracle": True,
+        "Kernel_Type": args.kernel,
         "Edges": list(graph.edges),
         "Parents": {v: list(graph.parents[v]) for v in graph.variables},
         "Variables": list(graph.variables),
     }
 
-    results_dir = f"results/boundary_tracking_dream_oracle/{args.graph_type}"
+    results_dir = (
+        f"results/boundary_tracking_dream_oracle{KERNEL_SUFFIX[args.kernel]}/"
+        f"{args.graph_type}"
+    )
     os.makedirs(results_dir, exist_ok=True)
     base_name = (
         f"run{args.run_num}_cbo_unknown_dr2_boundary_{args.acquisition}_"

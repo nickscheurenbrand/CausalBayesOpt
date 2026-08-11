@@ -77,7 +77,19 @@ def parse_args():
     p.add_argument("--run_num", type=int, default=1)
     p.add_argument("--noiseless", action="store_true")
     p.add_argument("--acquisition", type=str, default="EI", choices=["EI", "UCB"])
+    p.add_argument(
+        "--kernel", type=str, default="rbf",
+        choices=["rbf", "spherical_linear", "spherical_rbf"],
+    )
     return p.parse_args()
+
+
+# results-subdir suffix for each surrogate kernel ("rbf" keeps the original path)
+KERNEL_SUFFIX = {
+    "rbf": "",
+    "spherical_linear": "_spherical",
+    "spherical_rbf": "_spherical_rbf",
+}
 
 
 def run(args):
@@ -113,6 +125,7 @@ def run(args):
         individual=True,
         use_doubly_robust=True,
         acquisition=args.acquisition,
+        kernel_type=args.kernel,
     )
     model.set_values(D_O, D_I, exploration_set)
 
@@ -158,11 +171,12 @@ def run(args):
         "Weight_Scale": args.weight_scale,
         "Gwps": True,
         "Oracle": args.oracle,
+        "Kernel_Type": args.kernel,
     }
 
     tag = f"gwps_n{args.max_nodes}_ws{args.weight_scale:g}"
     subdir = "boundary_tracking_gwps_oracle" if args.oracle else "boundary_tracking_gwps"
-    results_dir = f"results/{subdir}/{tag}"
+    results_dir = f"results/{subdir}{KERNEL_SUFFIX[args.kernel]}/{tag}"
     os.makedirs(results_dir, exist_ok=True)
     base_name = (
         f"run{args.run_num}_cbo_unknown_dr2_boundary_{args.acquisition}_"

@@ -18,10 +18,24 @@ from utils.cbo_classes import (
     CausalExpectedImprovement,
     CausalGradientAcquisitionOptimizer,
     CausalRBF,
+    CausalSphericalLinear,
+    CausalSphericalRBF,
     CausalUpperConfidenceBound,
     Cost,
     DoFunctions,
 )
+
+
+def _data_bounds(X: np.ndarray) -> np.ndarray:
+    """Per-dimension (min, max) bounds from the training inputs, used to centre
+    and scale the stereographic projection. Degenerate (constant) dimensions are
+    padded to keep a non-zero span."""
+    mins = X.min(axis=0).astype(float)
+    maxs = X.max(axis=0).astype(float)
+    degenerate = (maxs - mins) < 1e-9
+    mins[degenerate] -= 0.5
+    maxs[degenerate] += 0.5
+    return np.stack([mins, maxs], axis=1)
 
 
 def set_up_GP(
@@ -31,10 +45,14 @@ def set_up_GP(
     var_function_do: Callable,
     X: np.ndarray,
     Y: np.ndarray,
+    kernel_type: str = "rbf",
 ) -> GPyModelWrapper:
     """
     Setting up the Gaussian Process based on the previous computed interventional
-    mean function and interventional variance function
+    mean function and interventional variance function.
+
+    kernel_type: "rbf" (default, unchanged behaviour) or "spherical_linear" to
+    use the stereographic-projection linear kernel in place of the RBF core.
     """
     if causal_prior:
         logging.info("Using the Causal Gaussian Prior")
@@ -43,14 +61,32 @@ def set_up_GP(
         mf = Mapping(input_space, 1)
         mf.f = mean_function_do
         mf.update_gradients = lambda a, b: None
-        kernel = CausalRBF(
-            input_space,
-            variance_adjustment=var_function_do,
-            lenghtscale=1.0,
-            variance=1.0,
-            rescale_variance=1.0,
-            ARD=False,
-        )
+        if kernel_type == "spherical_linear":
+            kernel = CausalSphericalLinear(
+                input_space,
+                variance_adjustment=var_function_do,
+                variance=1.0,
+                lengthscale=1.0,
+                bounds=_data_bounds(X),
+            )
+        elif kernel_type == "spherical_rbf":
+            kernel = CausalSphericalRBF(
+                input_space,
+                variance_adjustment=var_function_do,
+                variance=1.0,
+                lengthscale=1.0,
+                proj_lengthscale=1.0,
+                bounds=_data_bounds(X),
+            )
+        else:
+            kernel = CausalRBF(
+                input_space,
+                variance_adjustment=var_function_do,
+                lenghtscale=1.0,
+                variance=1.0,
+                rescale_variance=1.0,
+                ARD=False,
+            )
 
         gpy_model = GPRegression(
             X=X, Y=Y, kernel=kernel, noise_var=1e-10, mean_function=mf
@@ -61,10 +97,29 @@ def set_up_GP(
     else:
         logging.info("Setting up the gaussian prior")
         # this one just uses the data
+        if kernel_type == "spherical_linear":
+            kernel = CausalSphericalLinear(
+                input_space,
+                variance_adjustment=lambda x: np.zeros(np.atleast_2d(x).shape[0]),
+                variance=1.0,
+                lengthscale=1.0,
+                bounds=_data_bounds(X),
+            )
+        elif kernel_type == "spherical_rbf":
+            kernel = CausalSphericalRBF(
+                input_space,
+                variance_adjustment=lambda x: np.zeros(np.atleast_2d(x).shape[0]),
+                variance=1.0,
+                lengthscale=1.0,
+                proj_lengthscale=1.0,
+                bounds=_data_bounds(X),
+            )
+        else:
+            kernel = RBF(input_space, lengthscale=1.0, variance=1.0)
         gpy_model = GPRegression(
             X=X,
             Y=Y,
-            kernel=RBF(input_space, lengthscale=1.0, variance=1.0),
+            kernel=kernel,
             noise_var=1e-10,
         )
         # gpy_model.optimize_restarts(num_restarts=5)
