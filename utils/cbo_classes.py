@@ -935,25 +935,27 @@ def get_standard_normal_pdf_cdf(
 
 
 class Cost(Acquisition):
+    """
+    Total cost of intervening on `evaluated_set`: the sum of the per-variable
+    cost functions, one per intervened dimension.
+
+    Generalised to any number of intervened variables. The previous version
+    hard-coded branches for 1/2/3 variables and asserted len(evaluated_set) <= 3,
+    which broke joint interventions on larger parent sets (e.g. the 5-parent
+    DREAM target or the 8-parent GWPS target).
+    """
+
     def __init__(self, costs_functions, evaluated_set):
         self.costs_functions = costs_functions
         self.evaluated_set = evaluated_set
 
-        assert len(self.evaluated_set) <= 3
-
     def evaluate(self, x):
-        if len(self.evaluated_set) == 1:
-            cost = self.costs_functions[self.evaluated_set[0]](x)
-        if len(self.evaluated_set) == 2:
-            cost = self.costs_functions[self.evaluated_set[0]](
-                x[:, 0]
-            ) + self.costs_functions[self.evaluated_set[1]](x[:, 1])
-        if len(self.evaluated_set) == 3:
-            cost = (
-                self.costs_functions[self.evaluated_set[0]](x[:, 0])
-                + self.costs_functions[self.evaluated_set[1]](x[:, 1])
-                + self.costs_functions[self.evaluated_set[2]](x[:, 2])
-            )
+        x = np.asarray(x)
+        if x.ndim == 1:
+            x = x.reshape(-1, 1)
+        cost = 0.0
+        for j, var in enumerate(self.evaluated_set):
+            cost = cost + self.costs_functions[var](x[:, j])
         return cost
 
     @property
