@@ -151,10 +151,16 @@ class CausalEnvironment(torch.utils.data.Dataset):
 
     def reseed(self, seed=None):
         self.rng = np.random.default_rng(seed)
-        try:
-            self.rng_jax = random.PRNGKey(seed)
-        except:
-            print("No JAX")
+        # Always define rng_jax so downstream code can test it explicitly.
+        # jax.random may import fine yet PRNGKey still fail (broken/mismatched
+        # install), in which case we fall back to the NumPy SEM, which ignores
+        # the key entirely.
+        self.rng_jax = None
+        if random is not None:
+            try:
+                self.rng_jax = random.PRNGKey(seed)
+            except Exception as exc:
+                print(f"jax PRNGKey unavailable ({exc}); using NumPy RNG only")
 
     def __getitem__(self, index):
         raise NotImplementedError
@@ -208,8 +214,10 @@ class CausalEnvironment(torch.utils.data.Dataset):
     def sample_weights(self):
         """Sample the edge weights"""
         if self.nonlinear:
+            # guard on the KEY, not just the module: jax.random can import while
+            # PRNGKey fails, leaving rng_jax unset (see reseed)
             subk = None
-            if random is not None:
+            if random is not None and getattr(self, "rng_jax", None) is not None:
                 self.rng_jax, subk = random.split(self.rng_jax)
             self.weights = self.conditionals.sample_parameters(
                 key=subk, n_vars=self.num_nodes
@@ -269,7 +277,7 @@ class CausalEnvironment(torch.utils.data.Dataset):
 
     def sample_nonlinear(self, num_samples, graph=None, node=None, values=None):
         subk = None
-        if random is not None:
+        if random is not None and getattr(self, "rng_jax", None) is not None:
             self.rng_jax, subk = random.split(self.rng_jax)
         if graph is None:
             graph = self.graph
