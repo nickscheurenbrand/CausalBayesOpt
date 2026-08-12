@@ -114,6 +114,13 @@ def run_oracle_boundary_tracking(
 ):
     nonlinear_string = "_nonlinear" if nonlinear else ""
     graph = set_graph(graph_type, nonlinear=nonlinear)
+    # Reseed the graph's RNG so the OBSERVATIONAL data varies across replicates:
+    # sample_model() draws D_O via graph.get_error_distribution() -> graph.rng,
+    # and set_graph() would otherwise leave it at ErdosRenyiGraph's construction
+    # seed (17), making every --seeds_replicate produce identical D_O. The graph
+    # topology itself stays fixed at seed 17, as intended. (DREAM/GWPS already do
+    # the equivalent via graph.set_seed / GwpsGraph(seed=...).)
+    graph.set_seed(seeds_int_data)
     D_O, _, _ = setup_observational_interventional(
         graph_type=None,
         noiseless=noiseless,

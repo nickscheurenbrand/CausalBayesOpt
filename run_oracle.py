@@ -14,6 +14,9 @@ analysis, teeing all output to a log file under the job's results directory.
 Because KERNEL_SUFFIX["rbf"] == "", results land in the base oracle folders
 (results/boundary_tracking_oracle, ..._dream_oracle, ..._gwps_oracle).
 
+Every job is repeated over 5 replicate seeds (71..75). The seed is encoded in
+the pickle name as the run number, so each dataset/graph yields run1..run5.
+
 Usage:
     python run_oracle.py --all               # run every job
     python run_oracle.py erdos               # run one or more jobs
@@ -32,13 +35,18 @@ HOME = os.path.expanduser("~")
 REPO = os.path.join(HOME, "causal_bayes_opt")
 PY = sys.executable
 
-# Shared config (matches run_oracle_spherical.py).
-SEED = "71"
+# Shared config (matches run_oracle_spherical.py, but over 5 replicate seeds).
 NOBS = "200"
 NTRIALS = "30"
-RUN = "1"
 ACQ = "EI"
 KERNEL = "rbf"
+
+# Five replicates. The pickle filename carries run_num (not the seed), i.e.
+# run{run_num}_cbo_unknown_dr2_boundary_{ACQ}_{n_obs}_{n_int}[...].pickle -- so
+# each seed gets its own run_num and the five runs land as run1..run5 instead of
+# overwriting one another.
+SEEDS = ["71", "72", "73", "74", "75"]
+REPLICATES = [(seed, str(i + 1)) for i, seed in enumerate(SEEDS)]
 
 ANALYSIS = os.path.join(REPO, "results_erdos", "boundary_bias_analysis.py")
 
@@ -47,24 +55,25 @@ def _ecoli(kernel, subdir):
     cwd = os.path.join(REPO, "scripts_dream")
     graphs = ["Size50-Ecoli1", "Size100-Ecoli1"]
     steps = []
-    for g in graphs:
+    for seed, run in REPLICATES:
+        for g in graphs:
+            steps.append((
+                cwd,
+                [PY, "oracle_boundary_tracking_dream_script.py",
+                 "--kernel", kernel, "--graph_type", g, "--acquisition", ACQ,
+                 "--seeds_replicate", seed, "--n_observational", NOBS,
+                 "--n_trials", NTRIALS, "--n_int", "1", "--run_num", run,
+                 "--noiseless", "--nonlinear"],
+                f"===== oracle {g} {ACQ} ({kernel}) seed={seed} run={run} =====",
+            ))
         steps.append((
             cwd,
-            [PY, "oracle_boundary_tracking_dream_script.py",
-             "--kernel", kernel, "--graph_type", g, "--acquisition", ACQ,
-             "--seeds_replicate", SEED, "--n_observational", NOBS,
-             "--n_trials", NTRIALS, "--n_int", "1", "--run_num", RUN,
-             "--noiseless", "--nonlinear"],
-            f"===== oracle {g} {ACQ} ({kernel}) =====",
+            [PY, ANALYSIS, "--run_num", run, "--n_obs", NOBS, "--n_int", "1",
+             "--nonlinear", "--results_subdir", subdir,
+             "--graph_types", ",".join(graphs),
+             "--base_name_prefix", f"cbo_unknown_dr2_boundary_{ACQ}"],
+            f"===== ANALYSIS oracle {ACQ} ({kernel}) seed={seed} run={run} =====",
         ))
-    steps.append((
-        cwd,
-        [PY, ANALYSIS, "--run_num", RUN, "--n_obs", NOBS, "--n_int", "1",
-         "--nonlinear", "--results_subdir", subdir,
-         "--graph_types", ",".join(graphs),
-         "--base_name_prefix", f"cbo_unknown_dr2_boundary_{ACQ}"],
-        f"===== ANALYSIS oracle {ACQ} ({kernel}) =====",
-    ))
     return {"subdir": subdir, "log": "ecoli_ei_pbs.log", "steps": steps}
 
 
@@ -73,23 +82,24 @@ def _erdos(kernel, subdir):
     graphs = ["Erdos50", "Erdos100"]
     nanchor = "35"
     steps = []
-    for g in graphs:
+    for seed, run in REPLICATES:
+        for g in graphs:
+            steps.append((
+                cwd,
+                [PY, "oracle_boundary_tracking_script.py",
+                 "--kernel", kernel, "--graph_type", g, "--acquisition", ACQ,
+                 "--seeds_replicate", seed, "--n_observational", NOBS,
+                 "--n_trials", NTRIALS, "--n_anchor_points", nanchor,
+                 "--run_num", run, "--noiseless"],
+                f"===== oracle {g} {ACQ} ({kernel}) seed={seed} run={run} =====",
+            ))
         steps.append((
             cwd,
-            [PY, "oracle_boundary_tracking_script.py",
-             "--kernel", kernel, "--graph_type", g, "--acquisition", ACQ,
-             "--seeds_replicate", SEED, "--n_observational", NOBS,
-             "--n_trials", NTRIALS, "--n_anchor_points", nanchor,
-             "--run_num", RUN, "--noiseless"],
-            f"===== oracle {g} {ACQ} ({kernel}) =====",
+            [PY, ANALYSIS, "--run_num", run, "--n_obs", NOBS, "--n_int", "2",
+             "--results_subdir", subdir, "--graph_types", ",".join(graphs),
+             "--base_name_prefix", f"cbo_unknown_dr2_boundary_{ACQ}"],
+            f"===== ANALYSIS oracle {ACQ} ({kernel}) seed={seed} run={run} =====",
         ))
-    steps.append((
-        cwd,
-        [PY, ANALYSIS, "--run_num", RUN, "--n_obs", NOBS, "--n_int", "2",
-         "--results_subdir", subdir, "--graph_types", ",".join(graphs),
-         "--base_name_prefix", f"cbo_unknown_dr2_boundary_{ACQ}"],
-        f"===== ANALYSIS oracle {ACQ} ({kernel}) =====",
-    ))
     return {"subdir": subdir, "log": "erdos_ei_pbs.log", "steps": steps}
 
 
@@ -97,25 +107,25 @@ def _gwps(kernel, subdir):
     cwd = os.path.join(REPO, "scripts_gwps")
     ws, maxn, topk = "3", "60", "8"
     tag = f"gwps_n{maxn}_ws{ws}"
-    steps = [
-        (
+    steps = []
+    for seed, run in REPLICATES:
+        steps.append((
             cwd,
             [PY, "gwps_boundary_script.py",
              "--kernel", kernel, "--acquisition", ACQ, "--weight_scale", ws,
              "--oracle", "--max_nodes", maxn, "--top_k_parents", topk,
-             "--seeds_replicate", SEED, "--n_observational", NOBS,
-             "--n_trials", NTRIALS, "--n_int", "1", "--run_num", RUN,
+             "--seeds_replicate", seed, "--n_observational", NOBS,
+             "--n_trials", NTRIALS, "--n_int", "1", "--run_num", run,
              "--noiseless"],
-            f"===== oracle {ACQ} ({kernel}) =====",
-        ),
-        (
+            f"===== oracle {ACQ} ({kernel}) seed={seed} run={run} =====",
+        ))
+        steps.append((
             cwd,
-            [PY, ANALYSIS, "--run_num", RUN, "--n_obs", NOBS, "--n_int", "1",
+            [PY, ANALYSIS, "--run_num", run, "--n_obs", NOBS, "--n_int", "1",
              "--results_subdir", subdir, "--graph_types", tag,
              "--base_name_prefix", f"cbo_unknown_dr2_boundary_{ACQ}"],
-            f"===== ANALYSIS oracle {ACQ} ({kernel}) =====",
-        ),
-    ]
+            f"===== ANALYSIS oracle {ACQ} ({kernel}) seed={seed} run={run} =====",
+        ))
     return {"subdir": subdir, "log": "gwps_ei_pbs.log", "steps": steps}
 
 
