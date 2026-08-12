@@ -1,5 +1,6 @@
 import itertools
 import logging
+from functools import partial
 from typing import Callable, List, OrderedDict, Tuple
 
 import numpy as np
@@ -169,11 +170,21 @@ def update_all_do_functions(
     samples_dict = {
         var: samples[:, i].reshape(-1, 1) for i, var in enumerate(variables)
     }
+    # graph.get_all_do() only registers do-functions for the graph's OWN
+    # (single-variable) exploration set, so joint intervention sets would have no
+    # entry. Register one for every element of the exploration set actually in
+    # use, keyed exactly as DoFunctions.get_do_function_name expects.
+    do_dict = dict(graph.get_all_do())
+    for es in exploration_set:
+        key = f"compute_do_{'_'.join(str(v) for v in es)}"
+        if key not in do_dict:
+            do_dict[key] = partial(graph.compute_do_generic, intervention_nodes=tuple(es))
+
     # to make it an instance of the class rather than the individual functions
     do_functions_list = [None] * len(exploration_set)
     for i, intervention_set in enumerate(exploration_set):
         do_functions_list[i] = DoFunctions(
-            graph.get_all_do(),
+            do_dict,
             samples_dict,
             intervention_set,
         )

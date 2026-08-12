@@ -57,6 +57,7 @@ from graphs.data_setup import setup_observational_interventional
 from graphs.graph import GraphStructure
 from graphs.graph_erdos_renyi import ErdosRenyiGraph
 from scripts.base_script import parse_args
+from utils.sem_sampling import draw_interventional_samples_sem
 
 logging.basicConfig(
     level=logging.INFO,
@@ -113,7 +114,7 @@ def run_oracle_boundary_tracking(
 ):
     nonlinear_string = "_nonlinear" if nonlinear else ""
     graph = set_graph(graph_type, nonlinear=nonlinear)
-    D_O, D_I, exploration_set = setup_observational_interventional(
+    D_O, _, _ = setup_observational_interventional(
         graph_type=None,
         noiseless=noiseless,
         seed=seeds_int_data,
@@ -129,6 +130,17 @@ def run_oracle_boundary_tracking(
             f"target {graph.target} has no parents; oracle run is undefined"
         )
 
+    # ---- JOINT ORACLE EXPLORATION SET ----
+    # The oracle intervenes on ALL true parents simultaneously, so the
+    # exploration set is the single joint set (true_parents), not one singleton
+    # per parent. Interventional data must be drawn for that joint set.
+    exploration_set = [true_parents]
+    D_I = draw_interventional_samples_sem(
+        exploration_set, graph, n_int=n_int, seed=seeds_int_data, noiseless=noiseless
+    )
+    logging.info(f"ORACLE: joint exploration set {exploration_set}")
+    # --------------------------------------
+
     model = PARENT_SCALE(
         graph=graph,
         nonlinear=nonlinear,
@@ -141,12 +153,17 @@ def run_oracle_boundary_tracking(
 
     # ---- ORACLE INJECTION ----
     # Replace the bootstrap parent-identification with a point mass on the
-    # true parent set. This is the ONLY behavioural difference from
-    # boundary_tracking_script.py.
+    # true parent set, and pin the exploration set to the JOINT parent set
+    # (PARENT_SCALE.redefine_exploration_set would otherwise flatten it into
+    # one singleton per parent).
     def _oracle_initial_probabilities():
         return {true_parents: 1.0}
 
+    def _joint_exploration_set():
+        model.exploration_set = [true_parents]
+
     model.determine_initial_probabilities = _oracle_initial_probabilities
+    model.redefine_exploration_set = _joint_exploration_set
     # --------------------------
 
     (

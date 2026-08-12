@@ -41,6 +41,7 @@ import numpy as np
 from algorithms.PARENT_SCALE_algorithm import PARENT_SCALE
 from graphs.data_setup import setup_observational_interventional
 from graphs.graph_gwps import GwpsGraph
+from utils.sem_sampling import draw_interventional_samples_sem
 
 logging.basicConfig(
     level=logging.INFO,
@@ -119,6 +120,18 @@ def run(args):
         graph=graph,
     )
 
+    if args.oracle:
+        # ---- JOINT ORACLE EXPLORATION SET ----
+        # The oracle intervenes on ALL true parents simultaneously, so the
+        # exploration set is the single joint set and the interventional data
+        # must be drawn for it.
+        exploration_set = [true_parents]
+        D_I = draw_interventional_samples_sem(
+            exploration_set, graph, n_int=args.n_int,
+            seed=args.seeds_replicate, noiseless=args.noiseless,
+        )
+        logging.info(f"ORACLE: joint exploration set {exploration_set}")
+
     model = PARENT_SCALE(
         graph=graph,
         nonlinear=False,  # GWPS SEM is linear (real G_hat weights)
@@ -130,9 +143,17 @@ def run(args):
     model.set_values(D_O, D_I, exploration_set)
 
     if args.oracle:
+        # force the true parent set as the sole candidate, and pin the
+        # exploration set to the JOINT parent set (otherwise
+        # redefine_exploration_set flattens it into one singleton per parent)
         def _oracle_initial_probabilities():
             return {true_parents: 1.0}
+
+        def _joint_exploration_set():
+            model.exploration_set = [true_parents]
+
         model.determine_initial_probabilities = _oracle_initial_probabilities
+        model.redefine_exploration_set = _joint_exploration_set
 
     (
         best_y_array,

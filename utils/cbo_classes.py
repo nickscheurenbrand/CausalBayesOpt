@@ -53,10 +53,13 @@ class DoFunctions:
         returns to name of the do function, based on which variables are intervened
         upon
         """
-        string = ""
-        for i in range(len(self.intervention_variables)):
-            string += str(self.intervention_variables[i])
-        do_function_name = "compute_do_" + string
+        # NOTE: must match the key format used when the do-functions are
+        # registered (GraphStructure.get_all_do / update_all_do_functions), i.e.
+        # "_".join. Plain concatenation coincides with that only for
+        # single-variable sets and breaks joint interventions
+        # (("19","49") -> "compute_do_1949" vs the registered "compute_do_19_49").
+        key = "_".join(str(v) for v in self.intervention_variables)
+        do_function_name = "compute_do_" + key
         return do_function_name
 
     def set_do_effects_function(self) -> None:

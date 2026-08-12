@@ -32,6 +32,7 @@ from algorithms.PARENT_SCALE_algorithm import PARENT_SCALE
 from graphs.data_setup import setup_observational_interventional
 from graphs.graph import GraphStructure
 from graphs.graph_dream import Dream4Graph
+from utils.sem_sampling import draw_interventional_samples_sem
 
 logging.basicConfig(
     level=logging.INFO,
@@ -120,7 +121,7 @@ def run_oracle_dream(args):
     if len(true_parents) == 0:
         raise ValueError(f"target {graph.target} has no parents; oracle undefined")
 
-    D_O, D_I, exploration_set = setup_observational_interventional(
+    D_O, _, _ = setup_observational_interventional(
         graph_type=None,
         noiseless=args.noiseless,
         seed=args.seeds_replicate,
@@ -128,6 +129,16 @@ def run_oracle_dream(args):
         n_int=args.n_int,
         graph=graph,
     )
+
+    # ---- JOINT ORACLE EXPLORATION SET ----
+    # The oracle intervenes on ALL true parents simultaneously.
+    exploration_set = [true_parents]
+    D_I = draw_interventional_samples_sem(
+        exploration_set, graph, n_int=args.n_int,
+        seed=args.seeds_replicate, noiseless=args.noiseless,
+    )
+    logging.info(f"ORACLE: joint exploration set {exploration_set}")
+    # --------------------------------------
 
     model = PARENT_SCALE(
         graph=graph,
@@ -139,11 +150,17 @@ def run_oracle_dream(args):
     )
     model.set_values(D_O, D_I, exploration_set)
 
-    # ---- ORACLE INJECTION: force the true parent set as the sole candidate ----
+    # ---- ORACLE INJECTION: force the true parent set as the sole candidate,
+    # and pin the exploration set to the JOINT parent set (otherwise
+    # redefine_exploration_set flattens it into one singleton per parent).
     def _oracle_initial_probabilities():
         return {true_parents: 1.0}
 
+    def _joint_exploration_set():
+        model.exploration_set = [true_parents]
+
     model.determine_initial_probabilities = _oracle_initial_probabilities
+    model.redefine_exploration_set = _joint_exploration_set
     # ---------------------------------------------------------------------------
 
     (
