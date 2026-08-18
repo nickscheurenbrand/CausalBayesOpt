@@ -73,17 +73,20 @@ KERNEL_SUFFIX = {
 }
 
 
-def set_graph(graph_type: str, nonlinear: bool = False) -> GraphStructure:
+def set_graph(graph_type: str, nonlinear: bool = False,
+              target: str = None) -> GraphStructure:
+    """`target` overrides the built-in choice.
+
+    The built-in targets predate the ancestry stratification and some of them
+    (Erdos100 -> "80") sit in a tiny component with no mediated-ancestor pool,
+    so the mediation arms need a different one.
+    """
     assert graph_type in ["Erdos20", "Erdos50", "Erdos100"]
-    if graph_type == "Erdos20":
-        graph = ErdosRenyiGraph(num_nodes=20, nonlinear=nonlinear)
-        graph.set_target("18")
-    elif graph_type == "Erdos50":
-        graph = ErdosRenyiGraph(num_nodes=50, nonlinear=nonlinear)
-        graph.set_target("23")
-    elif graph_type == "Erdos100":
-        graph = ErdosRenyiGraph(num_nodes=100, nonlinear=nonlinear)
-        graph.set_target("80")
+    defaults = {"Erdos20": (20, "18"), "Erdos50": (50, "23"),
+                "Erdos100": (100, "80")}
+    n, default_target = defaults[graph_type]
+    graph = ErdosRenyiGraph(num_nodes=n, nonlinear=nonlinear)
+    graph.set_target(target or default_target)
     return graph
 
 
@@ -111,9 +114,12 @@ def run_oracle_boundary_tracking(
     nonlinear: bool,
     acquisition: str = "EI",
     kernel_type: str = "rbf",
+    target: str = None,
 ):
     nonlinear_string = "_nonlinear" if nonlinear else ""
-    graph = set_graph(graph_type, nonlinear=nonlinear)
+    graph = set_graph(graph_type, nonlinear=nonlinear, target=target)
+    # a non-default target is a different experiment: keep its results apart
+    tag = f"{graph_type}_t{target}" if target else graph_type
     # Reseed the graph's RNG so the OBSERVATIONAL data varies across replicates:
     # sample_model() draws D_O via graph.get_error_distribution() -> graph.rng,
     # and set_graph() would otherwise leave it at ErdosRenyiGraph's construction
@@ -206,7 +212,7 @@ def run_oracle_boundary_tracking(
     }
 
     results_dir = (
-        f"results/boundary_tracking_oracle{KERNEL_SUFFIX[kernel_type]}/{graph_type}"
+        f"results/boundary_tracking_oracle{KERNEL_SUFFIX[kernel_type]}/{tag}"
     )
     os.makedirs(results_dir, exist_ok=True)
     base_name = (
@@ -235,6 +241,7 @@ if __name__ == "__main__":
     kernel_parser.add_argument(
         "--kernel", type=str, default="rbf", choices=list(KERNEL_SUFFIX.keys())
     )
+    kernel_parser.add_argument("--target", type=str, default=None)
     kernel_args, _ = kernel_parser.parse_known_args()
     run_oracle_boundary_tracking(
         graph_type=args.graph_type,
@@ -247,4 +254,5 @@ if __name__ == "__main__":
         nonlinear=args.nonlinear,
         acquisition=args.acquisition,
         kernel_type=kernel_args.kernel,
+        target=kernel_args.target,
     )

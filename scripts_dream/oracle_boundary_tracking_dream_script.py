@@ -200,9 +200,9 @@ def run_oracle_dream(args):
         "Variables": list(graph.variables),
     }
 
+    tag = f"{args.graph_type}_t{args.target}" if args.target else args.graph_type
     results_dir = (
-        f"results/boundary_tracking_dream_oracle{KERNEL_SUFFIX[args.kernel]}/"
-        f"{args.graph_type}"
+        f"results/boundary_tracking_dream_oracle{KERNEL_SUFFIX[args.kernel]}/{tag}"
     )
     os.makedirs(results_dir, exist_ok=True)
     base_name = (
