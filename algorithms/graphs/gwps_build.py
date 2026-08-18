@@ -76,12 +76,42 @@ def _dagify(g):
     return g
 
 
+def _non_ancestor_candidates(sparse, target, keep, n_wanted):
+    """Up to `n_wanted` genes that provably CANNOT be ancestors of the target.
+
+    The carve is the target's ancestor closure, so by construction it holds
+    almost no causally-null nodes -- which makes a matched "non-ancestor"
+    control arm impossible. This adds some back.
+
+    Candidates are drawn from outside nx.ancestors(sparse, target). Because the
+    final subgraph's edges are a subset of `sparse`'s, a node that is not an
+    ancestor of the target in `sparse` cannot become one in the subgraph, so no
+    edge surgery is needed afterwards. Candidates are ranked by how many edges
+    they share with the already-kept genes, so the additions are wired into the
+    subgraph (descendants of the target, siblings sharing a confounder, ...)
+    rather than floating free.
+    """
+    if n_wanted <= 0:
+        return []
+    forbidden = nx.ancestors(sparse, target) | {target}
+    scored = []
+    for n in sparse.nodes():
+        if n in forbidden or n in keep:
+            continue
+        deg = sum(1 for k in keep if sparse.has_edge(k, n) or sparse.has_edge(n, k))
+        if deg:
+            scored.append((-deg, n))
+    scored.sort()
+    return [n for _, n in scored[:n_wanted]]
+
+
 def build_gwps_dag(
     edge_csv=DEFAULT_EDGE_CSV,
     target=None,
     max_nodes=60,
     top_k_parents=8,
     weight_scale=1.0,
+    n_non_ancestors=0,
 ):
     """
     Returns dict with:
@@ -89,6 +119,12 @@ def build_gwps_dag(
       W              : N x N weight matrix, W[parent, child] = G_hat*weight_scale
       index_to_ensg  : {int: ENSG}
       target_index   : int index of the (final) target
+      n_non_ancestors: how many guaranteed non-ancestors were added
+
+    n_non_ancestors > 0 reserves that many of the `max_nodes` budget for genes
+    that are NOT ancestors of the target, so the graph can host a causally-null
+    intervention arm. It defaults to 0, which reproduces the original carve
+    exactly.
     """
     full = _load_edges(edge_csv)
     sparse = _sparsify(full, top_k_parents)
@@ -98,11 +134,18 @@ def build_gwps_dag(
     elif target not in sparse:
         raise ValueError(f"target {target} not in the (sparsified) graph")
 
-    genes = _bounded_ancestors(sparse, target, max_nodes)
+    n_non_ancestors = max(int(n_non_ancestors), 0)
+    genes = _bounded_ancestors(sparse, target, max_nodes - n_non_ancestors)
+    added = set(_non_ancestor_candidates(sparse, target, genes, n_non_ancestors))
+    genes = set(genes) | added
     sub = _dagify(sparse.subgraph(genes).copy())
 
     if sub.in_degree(target) == 0:
-        target = max(sub.nodes(), key=lambda n: sub.in_degree(n))
+        # fall back to the best-connected node, but never to one of the added
+        # non-ancestors -- retargeting onto those would void the guarantee that
+        # they have no causal path to the target
+        pool = [n for n in sub.nodes() if n not in added] or list(sub.nodes())
+        target = max(pool, key=lambda n: sub.in_degree(n))
     if sub.in_degree(target) == 0:
         raise ValueError("no node in the subgraph has parents; loosen the params")
 
@@ -122,4 +165,5 @@ def build_gwps_dag(
         "W": W,
         "index_to_ensg": {i: g for g, i in idx.items()},
         "target_index": idx[target],
+        "n_non_ancestors": len(added & set(sub.nodes())),
     }

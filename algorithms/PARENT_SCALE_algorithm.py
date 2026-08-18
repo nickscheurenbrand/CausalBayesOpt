@@ -389,6 +389,35 @@ class PARENT_SCALE(BASE):
                 n_on_boundary += 1
         return n_on_boundary / n_dims, n_on_boundary, n_dims
 
+    def build_surrogates(
+        self,
+        trial_observed: bool,
+        data_x_list,
+        data_y_list,
+        best_variable: int,
+        input_space,
+        iteration: int = 0,
+    ):
+        """Build/refresh one surrogate per exploration set.
+
+        Seam for alternative surrogates: subclasses override this to change the
+        model without touching the algorithm loop. The default is the standard
+        causal-prior GP (RBF or spherical core, per ``self.kernel_type``).
+        """
+        return ceo_utils.update_posterior_model_aggregate_2(
+            self.exploration_set,
+            trial_observed,
+            self.model_list_overall,
+            data_x_list,
+            data_y_list,
+            self.causal_prior,
+            best_variable,
+            input_space,
+            self.do_effects_functions,
+            self.posterior,
+            kernel_type=self.kernel_type,
+        )
+
     def run_algorithm(self, T: int = 30, show_graphics: bool = False, file: str = None):
 
         self.data_and_prior_setup()
@@ -456,18 +485,8 @@ class PARENT_SCALE(BASE):
             self.return_elements_for_new_exploration_set(data_x_list, data_y_list)
         )
         self.calculate_do_statistics()
-        self.model_list_overall = ceo_utils.update_posterior_model_aggregate_2(
-            self.exploration_set,
-            True,
-            self.model_list_overall,
-            data_x_list,
-            data_y_list,
-            self.causal_prior,
-            best_variable,
-            input_space,
-            self.do_effects_functions,
-            self.posterior,
-            kernel_type=self.kernel_type,
+        self.model_list_overall = self.build_surrogates(
+            True, data_x_list, data_y_list, best_variable, input_space, iteration=0
         )
         # iteration-0 snapshot of the posterior over parent sets
         self.posterior_history.append(dict(zip(self.graphs.keys(), self.posterior)))
@@ -604,18 +623,9 @@ class PARENT_SCALE(BASE):
             data_x_list, data_y_list, parameter_spaces, target_classes = (
                 self.return_elements_for_new_exploration_set(data_x_list, data_y_list)
             )
-            self.model_list_overall = ceo_utils.update_posterior_model_aggregate_2(
-                self.exploration_set,
-                False,
-                self.model_list_overall,
-                data_x_list,
-                data_y_list,
-                self.causal_prior,
-                best_variable,
-                input_space,
-                self.do_effects_functions,
-                self.posterior,
-                kernel_type=self.kernel_type,
+            self.model_list_overall = self.build_surrogates(
+                False, data_x_list, data_y_list, best_variable, input_space,
+                iteration=i + 1,
             )
             current_global_min = global_opt[i]
 

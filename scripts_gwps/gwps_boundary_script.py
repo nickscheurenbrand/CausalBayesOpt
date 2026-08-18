@@ -69,6 +69,10 @@ def parse_args():
     p.add_argument("--top_k_parents", type=int, default=8)
     p.add_argument("--weight_scale", type=float, default=3.0)
     p.add_argument("--noise_sigma", type=float, default=1.0)
+    p.add_argument("--n_non_ancestors", type=int, default=0,
+                   help="reserve this many of --max_nodes for genes that are NOT "
+                        "ancestors of the target; must match the random arm so "
+                        "both run on the same graph (0 = original carve)")
     p.add_argument("--target", type=str, default=None, help="target ENSG (auto if omitted)")
     p.add_argument("--oracle", action="store_true", help="force the true parent set (prob 1.0)")
     p.add_argument("--seeds_replicate", type=int, default=71)
@@ -101,6 +105,7 @@ def run(args):
         noise_sigma=args.noise_sigma,
         weight_scale=args.weight_scale,
         seed=args.seeds_replicate,
+        n_non_ancestors=args.n_non_ancestors,
     )
     true_parents = tuple(graph.parents[graph.target])
     logging.info(
@@ -195,7 +200,8 @@ def run(args):
         "Kernel_Type": args.kernel,
     }
 
-    tag = f"gwps_n{args.max_nodes}_ws{args.weight_scale:g}"
+    na = f"_na{args.n_non_ancestors}" if args.n_non_ancestors else ""
+    tag = f"gwps_n{args.max_nodes}_ws{args.weight_scale:g}{na}"
     subdir = "boundary_tracking_gwps_oracle" if args.oracle else "boundary_tracking_gwps"
     results_dir = f"results/{subdir}{KERNEL_SUFFIX[args.kernel]}/{tag}"
     os.makedirs(results_dir, exist_ok=True)

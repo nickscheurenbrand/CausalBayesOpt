@@ -32,6 +32,7 @@ class GwpsGraph(GraphStructure):
         noise_sigma: float = 1.0,
         weight_scale: float = 1.0,
         seed: int = 17,
+        n_non_ancestors: int = 0,
     ):
         self.noise_sigma = noise_sigma
         self.nonlinear = False
@@ -42,10 +43,12 @@ class GwpsGraph(GraphStructure):
             max_nodes=max_nodes,
             top_k_parents=top_k_parents,
             weight_scale=weight_scale,
+            n_non_ancestors=n_non_ancestors,
         )
         int_graph = built["int_graph"]
         W = built["W"]
         self.index_to_ensg = built["index_to_ensg"]
+        self.n_non_ancestors = built.get("n_non_ancestors", 0)
         self.ensg_to_index = {g: i for i, g in self.index_to_ensg.items()}
         target_index = built["target_index"]
         N = int_graph.number_of_nodes()

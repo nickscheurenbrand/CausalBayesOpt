@@ -18,6 +18,23 @@ node's observational correlation with the target so this can be checked directly
 The random set is drawn with the replicate seed, so each seed gives a DIFFERENT
 set -- the 5 replicates provide set-to-set variability, not just data noise.
 
+--node_category stratifies the draw by ANCESTRY, because "non-parent" does not
+mean "no causal effect": a non-parent can still be an ancestor whose effect on
+the target is real but MEDIATED through other nodes. Only a non-ancestor is a
+true causal null (P(Y | do(v)) = P(Y)). "any" reproduces the original unstratified
+behaviour; "ancestor" isolates mediated-but-relevant nodes; "non_ancestor"
+isolates the genuine null. Every run also saves the relation and directed
+distance-to-target of each chosen node, plus the pool sizes, so runs drawn with
+"any" can be stratified after the fact.
+
+Each run additionally locates the TRUE optimum of E[Y | do(X_S = x)] over the
+intervention box on the ground-truth SEM and records whether it is interior or
+on the boundary (--no_true_optimum to skip). This is what makes a boundary
+intervention interpretable: if the true optimum is itself on the boundary, going
+to the edge is CORRECT, not a failure. For a linear SEM E[Y | do(x)] is affine,
+so its optimum is always at a corner; interior optima can only arise from
+nonlinear mechanisms.
+
 Output:
   results/boundary_tracking_{erdos|dream|gwps}_random{kernel_suffix}/{tag}/
       run{run_num}_cbo_unknown_dr2_boundary_{ACQ}_{n_obs}_{n_int}[_nonlinear].pickle
@@ -48,6 +65,13 @@ from graphs.graph import GraphStructure
 from graphs.graph_dream import Dream4Graph
 from graphs.graph_erdos_renyi import ErdosRenyiGraph
 from graphs.graph_gwps import GwpsGraph
+from utils.ground_truth import (
+    classify_nodes,
+    find_true_optimum,
+    linear_total_effects,
+    stratified_non_parents,
+    stratified_pools,
+)
 from utils.sem_sampling import draw_interventional_samples_sem
 
 logging.basicConfig(
@@ -74,42 +98,45 @@ def build_graph(args):
     gt = args.graph_type
     if gt in ERDOS:
         n, target = ERDOS[gt]
+        # --target overrides the default: the default targets were picked before
+        # ancestry mattered and some cannot host both stratified arms
+        target = args.target or target
         graph = ErdosRenyiGraph(num_nodes=n, nonlinear=False)
         graph.set_target(target)
         # vary the observational draw across replicates (see oracle script)
         graph.set_seed(args.seeds_replicate)
-        return graph, "erdos", False, gt
+        # a non-default target is a different experiment: keep it out of the
+        # default target's results directory
+        return graph, "erdos", False, (f"{gt}_t{target}" if args.target else gt)
     if gt in DREAM_YML:
         graph = Dream4Graph(yml_name=DREAM_YML[gt])
-        target = sorted(graph.variables,
-                        key=lambda v: (-len(graph.parents[v]), int(v)))[0]
+        target = args.target or sorted(
+            graph.variables, key=lambda v: (-len(graph.parents[v]), int(v)))[0]
         graph.set_target(target)
         graph.set_seed(args.seeds_replicate)
-        return graph, "dream", True, gt
+        return graph, "dream", True, (f"{gt}_t{target}" if args.target else gt)
     if gt == "gwps":
         graph = GwpsGraph(
             target=args.target, max_nodes=args.max_nodes,
             top_k_parents=args.top_k_parents, noise_sigma=args.noise_sigma,
             weight_scale=args.weight_scale, seed=args.seeds_replicate,
+            n_non_ancestors=args.n_non_ancestors,
         )
-        return graph, "gwps", False, f"gwps_n{args.max_nodes}_ws{args.weight_scale:g}"
+        na = f"_na{args.n_non_ancestors}" if args.n_non_ancestors else ""
+        return graph, "gwps", False, (
+            f"gwps_n{args.max_nodes}_ws{args.weight_scale:g}{na}")
     raise ValueError(f"unknown graph_type {gt!r}")
 
 
-def pick_random_non_parents(graph: GraphStructure, k: int, seed: int):
-    """k distinct non-parent, non-target nodes, drawn with `seed`."""
-    target = graph.target
-    parents = set(graph.parents[target])
-    pool = [v for v in graph.variables if v != target and v not in parents]
-    if len(pool) < k:
-        raise ValueError(f"only {len(pool)} non-parents available, need {k}")
-    rng = np.random.default_rng(seed)
-    chosen = rng.choice(np.array(pool, dtype=object), size=k, replace=False)
-    # deterministic ordering (numeric where possible) for a stable tuple key
-    try:
-        return tuple(sorted(chosen, key=lambda v: int(v)))
-    except ValueError:
-        return tuple(sorted(chosen))
+def pick_random_non_parents(graph: GraphStructure, k: int, seed: int,
+                            category: str = "any"):
+    """k distinct non-parent, non-target nodes from `category`, drawn with `seed`.
+
+    category "any" is the original unstratified pool; "ancestor" restricts to
+    non-parent ANCESTORS (mediated causal effect on the target) and
+    "non_ancestor" to non-ancestors (no causal effect at all).
+    """
+    return stratified_non_parents(graph, k, seed, category=category)
 
 
 def compute_p_true_parents(posterior_history, true_parents):
@@ -138,12 +165,37 @@ def parse_args():
     p.add_argument("--acquisition", type=str, default="EI", choices=["EI", "UCB"])
     p.add_argument("--kernel", type=str, default="rbf",
                    choices=list(KERNEL_SUFFIX.keys()))
+    # ancestry stratification of the random pool
+    p.add_argument("--node_category", type=str, default="any",
+                   choices=["any", "ancestor", "non_ancestor"],
+                   help="draw from all non-parents (any), non-parent ANCESTORS "
+                        "(mediated effect), or non-ancestors (true causal null)")
+    p.add_argument("--category_subdir", action="store_true",
+                   help="append the category to the results subdir, so stratified "
+                        "arms do not overwrite the unstratified ones")
+    # ground-truth optimum of E[Y | do(set)]
+    p.add_argument("--no_true_optimum", action="store_true",
+                   help="skip the ground-truth optimum search")
+    p.add_argument("--opt_direction", type=str, default="min",
+                   choices=["min", "max"],
+                   help="CBO minimises the target, so 'min' matches the runs")
+    p.add_argument("--opt_n_mc", type=int, default=50,
+                   help="MC samples per E[Y | do(x)] evaluation")
+    p.add_argument("--opt_grid", type=int, default=21,
+                   help="grid points per axis in the coordinate-descent sweeps")
     # gwps-only knobs (ignored otherwise)
-    p.add_argument("--target", type=str, default=None)
+    p.add_argument("--target", type=str, default=None,
+                   help="override the default target (any family). The built-in "
+                        "targets were chosen before ancestry mattered; some "
+                        "cannot host both stratified arms")
     p.add_argument("--max_nodes", type=int, default=60)
     p.add_argument("--top_k_parents", type=int, default=8)
     p.add_argument("--weight_scale", type=float, default=3.0)
     p.add_argument("--noise_sigma", type=float, default=1.0)
+    p.add_argument("--n_non_ancestors", type=int, default=0,
+                   help="gwps only: reserve this many of --max_nodes for genes "
+                        "that are NOT ancestors of the target, so the graph can "
+                        "host a causally-null arm (0 = original carve)")
     return p.parse_args()
 
 
@@ -155,12 +207,34 @@ def run(args):
         raise ValueError(f"target {target} has no parents; nothing to match in size")
 
     # random NON-PARENT set, same cardinality as the true parent set so the
-    # boundary fraction has the same denominator as the oracle
-    chosen = pick_random_non_parents(graph, len(true_parents), args.seeds_replicate)
+    # boundary fraction has the same denominator as the oracle, drawn from the
+    # requested ancestry stratum
+    pools = stratified_pools(graph)
+    chosen = pick_random_non_parents(graph, len(true_parents),
+                                     args.seeds_replicate, args.node_category)
+    relation, dist_to_target = classify_nodes(graph)
+    total_effects = linear_total_effects(graph)   # None when the SEM is nonlinear
     logging.info(
-        f"RANDOM non-parents [{args.graph_type}, seed={args.seeds_replicate}]: "
-        f"target {target}, true parents {true_parents}, intervening on {chosen}"
+        f"RANDOM non-parents [{args.graph_type}, seed={args.seeds_replicate}, "
+        f"category={args.node_category}]: target {target}, "
+        f"true parents {true_parents}, intervening on {chosen}"
     )
+    logging.info(
+        "pool sizes: " + ", ".join(f"{k}={len(v)}" for k, v in pools.items())
+    )
+    logging.info(
+        "chosen relations: "
+        + ", ".join(f"{v}={relation[v]}(d={dist_to_target[v]:.0f})"
+                    if np.isfinite(dist_to_target[v])
+                    else f"{v}={relation[v]}(d=inf)" for v in chosen)
+    )
+    if total_effects is not None:
+        logging.info(
+            "chosen total effects on target: "
+            + str({v: round(total_effects[v], 4) for v in chosen})
+            + " | parents: "
+            + str({v: round(total_effects[v], 4) for v in true_parents})
+        )
 
     D_O, _, _ = setup_observational_interventional(
         graph_type=None, noiseless=args.noiseless, seed=args.seeds_replicate,
@@ -183,6 +257,34 @@ def run(args):
         corr[v] = float(np.corrcoef(x, y)[0, 1]) if x.std() > 0 else 0.0
     logging.info(f"observational corr(chosen, target): "
                  f"{ {k: round(c, 3) for k, c in corr.items()} }")
+
+    # ---- TRUE optimum of E[Y | do(x)] on the ground-truth SEM ----
+    # Computed BEFORE the algorithm runs, on a pristine graph, and for the true
+    # parent set as well so the two are directly comparable. If the true optimum
+    # is on the boundary then edge-seeking is the correct answer, not a failure.
+    true_opt = true_opt_parents = None
+    if not args.no_true_optimum:
+        opt_kw = dict(direction=args.opt_direction, eps_frac=0.01,
+                      n_mc=args.opt_n_mc, n_grid=args.opt_grid,
+                      seed=args.seeds_replicate, noiseless=args.noiseless)
+        # The search reseeds graph.rng and the global numpy RNG (common random
+        # numbers); snapshot both so the algorithm's own draws are untouched and
+        # a run reproduces identically whether or not this search happened.
+        graph_rng, np_state = graph.rng, np.random.get_state()
+        try:
+            true_opt = find_true_optimum(graph, chosen, **opt_kw)
+            true_opt_parents = find_true_optimum(graph, true_parents, **opt_kw)
+        finally:
+            graph.rng = graph_rng
+            np.random.set_state(np_state)
+        for label, o in (("chosen", true_opt), ("parents", true_opt_parents)):
+            logging.info(
+                f"TRUE optimum [{label}]: {o['n_dims_on_boundary']}/{o['k']} dims "
+                f"on boundary ({'INTERIOR' if o['is_interior'] else 'boundary'}), "
+                f"E[Y]={o['opt_EY']:.4f}, spread over box={o['EY_range']:.4f}, "
+                f"pos={[round(p, 3) for p in o['opt_pos']]}"
+            )
+    # ---------------------------------------------------------------
 
     model = PARENT_SCALE(
         graph=graph, nonlinear=nonlinear, individual=True,
@@ -229,18 +331,30 @@ def run(args):
         "Kernel_Type": args.kernel,
         # random-set metadata
         "Random_Set": chosen,
-        "Node_Category": "any_non_parent",
+        "Node_Category": args.node_category,
         "Chosen_Corr_With_Target": corr,
         "Random_Seed": args.seeds_replicate,
         "Oracle": False,
+        # ancestry stratification (ground truth)
+        "Node_Relation": dict(relation),
+        "Node_Dist_To_Target": dict(dist_to_target),
+        "Chosen_Relation": {str(v): relation[str(v)] for v in chosen},
+        "Chosen_Dist_To_Target": {str(v): dist_to_target[str(v)] for v in chosen},
+        "Stratum_Pool_Sizes": {k: len(v) for k, v in pools.items()},
+        "Total_Effects": total_effects,
+        # ground-truth optimum of E[Y | do(set)]
+        "True_Optimum": true_opt,
+        "True_Optimum_Parents": true_opt_parents,
     }
     if family == "gwps":
         results_dict["Target_ENSG"] = graph.index_to_ensg[int(target)]
         results_dict["Index_To_ENSG"] = graph.index_to_ensg
         results_dict["Weight_Scale"] = args.weight_scale
 
+    cat_suffix = (f"_{args.node_category}"
+                  if args.category_subdir and args.node_category != "any" else "")
     results_dir = (f"results/boundary_tracking_{family}_random"
-                   f"{KERNEL_SUFFIX[args.kernel]}/{tag}")
+                   f"{KERNEL_SUFFIX[args.kernel]}{cat_suffix}/{tag}")
     os.makedirs(results_dir, exist_ok=True)
     ns = "_nonlinear" if nonlinear else ""
     base = (f"run{args.run_num}_cbo_unknown_dr2_boundary_{args.acquisition}_"
@@ -251,10 +365,16 @@ def run(args):
 
     boundary = np.array(model.boundary_percentages, dtype=float)
     best = np.asarray(best_y_array, dtype=float)
+    opt_note = ""
+    if true_opt is not None:
+        opt_note = (f"; TRUE optimum is "
+                    f"{'INTERIOR' if true_opt['is_interior'] else 'on the boundary'} "
+                    f"({true_opt['n_dims_on_boundary']}/{true_opt['k']} dims)")
     logging.info(
-        f"RANDOM {args.graph_type} [{args.acquisition}, seed={args.seeds_replicate}]: "
-        f"mean boundary% = {boundary.mean():.3f}; "
+        f"RANDOM {args.graph_type} [{args.acquisition}, seed={args.seeds_replicate}, "
+        f"category={args.node_category}]: mean boundary% = {boundary.mean():.3f}; "
         f"Best_Y {best[0]:.3f} -> {best[-1]:.3f} (improvement {best[-1]-best[0]:+.3f})"
+        f"{opt_note}"
     )
 
 
