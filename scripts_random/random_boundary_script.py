@@ -258,10 +258,20 @@ def run(args):
     logging.info(f"observational corr(chosen, target): "
                  f"{ {k: round(c, 3) for k, c in corr.items()} }")
 
+    model = PARENT_SCALE(
+        graph=graph, nonlinear=nonlinear, individual=True,
+        use_doubly_robust=True, acquisition=args.acquisition,
+        kernel_type=args.kernel,
+    )
+    model.set_values(D_O, D_I, exploration_set)
+
     # ---- TRUE optimum of E[Y | do(x)] on the ground-truth SEM ----
-    # Computed BEFORE the algorithm runs, on a pristine graph, and for the true
-    # parent set as well so the two are directly comparable. If the true optimum
-    # is on the boundary then edge-seeking is the correct answer, not a failure.
+    # Runs after set_values (which populates graph.interventional_range_data
+    # from D_O -- the box the algorithm actually searches) and before
+    # run_algorithm, for the chosen set and the true parent set alike. Using
+    # those same bounds is what makes 'on the boundary' here mean the same
+    # thing as in the run's Boundary_Percentage. If the true optimum is itself
+    # on the boundary, edge-seeking is the correct answer, not a failure.
     true_opt = true_opt_parents = None
     if not args.no_true_optimum:
         opt_kw = dict(direction=args.opt_direction, eps_frac=0.01,
@@ -285,13 +295,6 @@ def run(args):
                 f"pos={[round(p, 3) for p in o['opt_pos']]}"
             )
     # ---------------------------------------------------------------
-
-    model = PARENT_SCALE(
-        graph=graph, nonlinear=nonlinear, individual=True,
-        use_doubly_robust=True, acquisition=args.acquisition,
-        kernel_type=args.kernel,
-    )
-    model.set_values(D_O, D_I, exploration_set)
 
     # ---- force the RANDOM set (mirrors the oracle injection) ----
     def _random_initial_probabilities():

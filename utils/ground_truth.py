@@ -193,7 +193,30 @@ def linear_total_effects(graph) -> Optional[Dict[str, float]]:
 
 
 def intervention_bounds(graph, variables: Sequence[str]) -> List[Tuple[float, float]]:
-    ranges = graph.interventional_range_data
+    """The box the algorithm actually searches, per variable.
+
+    `interventional_range_data` is the per-variable [min, max] of the
+    OBSERVATIONAL data. It does not exist on a fresh graph -- it is created by
+    graph.set_interventional_range_data(D_O), which PARENT_SCALE.set_values
+    calls -- so this must run after set_values.
+
+    There is deliberately no fallback: GraphStructure.get_interventional_range
+    returns a flat [-5, 5] that no subclass overrides, which is NOT the box the
+    run searches, so silently using it would label an optimum "interior" or
+    "boundary" against the wrong bounds and make the result incomparable with
+    the run's own Boundary_Percentage.
+    """
+    ranges = getattr(graph, "interventional_range_data", None)
+    if not ranges:
+        raise RuntimeError(
+            "graph.interventional_range_data is not set: call this only after "
+            "model.set_values(D_O, ...), which derives the intervention box "
+            "from the observational data. (graph.get_interventional_range() is "
+            "not a valid substitute -- it returns a flat [-5, 5].)"
+        )
+    missing = [v for v in variables if v not in ranges]
+    if missing:
+        raise KeyError(f"no intervention range for {missing}")
     return [(float(ranges[v][0]), float(ranges[v][1])) for v in variables]
 
 
