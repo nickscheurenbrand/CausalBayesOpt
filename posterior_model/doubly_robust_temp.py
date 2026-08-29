@@ -302,7 +302,7 @@ def train(
         net.parameters(), lr=learning_rate, weight_decay=l2_reg
     )
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, patience=5, factor=0.5, verbose=False
+        optimizer, patience=5, factor=0.5
     )
     best_test_loss = float("inf")
     rounds_no_improve = 0  # counter for the number of rounds without improvement
