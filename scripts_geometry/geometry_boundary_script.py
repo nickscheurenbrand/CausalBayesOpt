@@ -10,7 +10,7 @@ saved alongside.
 Supports the same three families as scripts_random/random_boundary_script.py.
 
   python scripts_geometry/geometry_boundary_script.py --graph_type Erdos50 \
-      --prior checkpoints/pfn.pt --acquisition EI --noiseless --n_int 2
+      --prior tabpfn --acquisition EI --noiseless --n_int 2
 
 --prior zero runs the identical loop with m_PFN = 0, which is the ablation for
 E.4 (classical prior mean on the same adaptive geometry); --no_adapt_geometry
@@ -115,7 +115,9 @@ def parse_args():
                    help="force the true parent set (prob 1.0), intervened jointly")
     # appendix-E knobs
     p.add_argument("--prior", type=str, default="zero",
-                   help="PFN checkpoint path, or 'zero'/'constant' (E.4 ablations)")
+                   choices=["tabpfn", "pfn", "zero", "constant"],
+                   help="'tabpfn' (the E.4 prior; 'pfn' is an alias) or "
+                        "'zero'/'constant' (E.4 ablations)")
     p.add_argument("--prior_mean", type=str, default="pfn",
                    choices=["pfn", "pfn+do", "do", "zero"])
     p.add_argument("--no_adapt_geometry", action="store_true",

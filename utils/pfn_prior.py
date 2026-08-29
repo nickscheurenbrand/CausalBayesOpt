@@ -1,4 +1,4 @@
-r"""Prior-data Fitted Network prior mean (appendix E.4).
+r"""Prior-data Fitted Network prior mean (appendix E.4), backed by TabPFN.
 
 A classical GP surrogate assumes ``m(x) = 0``. Under boundary-concentrated
 observations that assumption extrapolates badly: everywhere away from the
@@ -16,16 +16,19 @@ prior conditioned on that context. Once trained it is a fixed, amortised
 predictor -- no per-run fitting -- and it stays informative with few, clustered
 observations because the prior it learned is global rather than data-driven.
 
+The prior used here is **TabPFN**, an externally trained, published PFN whose
+own training prior is generated from structural causal models. Using it in place
+of a bespoke, locally trained PFN removes "the authors chose their own prior"
+as an objection to E.4, at the cost of a prior that is no longer matched to the
+unit-sphere geometry the surrogate works in, and whose balance between
+boundary-optimal and interior-optimal response surfaces is not under our
+control. See :class:`TabPFNPrior` for the operational consequences.
+
 This module provides
 
-* :class:`SphericalPriorSampler` -- the prior the PFN is fitted to: random
-  smooth functions on the unit sphere (random-feature draws plus a linear
-  component), matching the geometry the surrogate actually sees, and biased to
-  include monotone surfaces whose optimum sits on the boundary, since that is
-  the regime the causal do-responses live in.
-* :class:`PFN` -- a small transformer doing in-context regression.
-* :func:`train_pfn` / :func:`load_pfn` -- fit and reload a checkpoint.
-* :class:`ZeroPFN`, :class:`ConstantPFN` -- torch-free baselines. ZeroPFN
+* :class:`TabPFNPrior` -- the E.4 prior: TabPFN's in-context posterior mean,
+  evaluated on the already-projected inputs.
+* :class:`ZeroPFN`, :class:`ConstantPFN` -- dependency-free baselines. ZeroPFN
   recovers the classical zero-mean GP exactly and is the ablation for E.4.
 
 All priors share the interface
@@ -35,26 +38,7 @@ All priors share the interface
 where the X are ALREADY projected (points on the unit sphere).
 """
 
-from typing import Optional
-
 import numpy as np
-
-try:  # torch is optional: the loop degrades to the torch-free priors without it
-    import torch
-    import torch.nn as nn
-    _TORCH = True
-except Exception:  # pragma: no cover - exercised only where torch is absent
-    torch = None
-    nn = object
-    _TORCH = False
-
-
-def _require_torch():
-    if not _TORCH:
-        raise ImportError(
-            "PyTorch is required for the PFN prior. Install torch, or pass "
-            "prior='zero' / 'constant' to use the torch-free baselines."
-        )
 
 
 # --------------------------------------------------------------- baselines ---
@@ -82,248 +66,118 @@ class ConstantPFN:
         return np.full(n, float(y.mean()) if y.size else 0.0)
 
 
-# ------------------------------------------------------------------ prior ----
+# ---------------------------------------------------------------- TabPFN -----
 
 
-class SphericalPriorSampler:
-    """Random smooth functions on the unit sphere -- the PFN's training prior.
+class TabPFNPrior:
+    r"""TabPFN as the E.4 prior mean.
 
-    Each task draws f(x~) = w' sigma(A x~ + b) + v' x~, with random widths and
-    scales, then optionally negates/steepens the linear part so that a
-    controlled fraction of tasks are monotone (optimum on the boundary) rather
-    than bump-shaped (interior optimum). Both regimes must be represented or the
-    PFN would bake in one of the two answers the surrogate is meant to discover.
+    ``TabPFNRegressor.fit(X_ctx, y_ctx)`` followed by ``.predict(X_query)`` IS
+    in-context regression, so TabPFN satisfies the prior interface directly. No
+    padding and no y-standardisation are applied here: TabPFN handles a variable
+    number of features natively (up to ~500) and normalises the target itself.
+
+    Fit caching is not an optimisation, it is a requirement. ``GeometryAware-
+    Surrogate.predict`` evaluates the prior mean on EVERY acquisition
+    evaluation, and the acquisition optimizer plus the finite-difference
+    gradients issue on the order of 10^3-10^4 evaluations per trial -- while the
+    context (the interventional data) changes only when ``set_data`` is called,
+    once per rebuild. The context is therefore hashed and the fitted regressor
+    reused until it actually changes, turning those 10^3-10^4 fits into one.
+    Even so this prior is far more expensive than the analytic baselines; budget
+    accordingly, and prefer ``device="cuda"`` where available.
+
+    Two degenerate contexts are handled before TabPFN is called at all, since it
+    is undefined on both: an empty context (no information -> 0) and a constant
+    context (no shape -> that constant).
     """
 
-    def __init__(
-        self,
-        max_dim: int = 10,
-        n_features: int = 64,
-        linear_fraction: float = 0.4,
-        seed: int = 0,
-    ):
-        self.max_dim = int(max_dim)
-        self.n_features = int(n_features)
-        self.linear_fraction = float(linear_fraction)
-        self.rng = np.random.default_rng(seed)
+    name = "tabpfn"
+    max_dim = None
 
-    def _sphere(self, n: int, dim: int) -> np.ndarray:
-        """n points on the unit sphere in R^dim (the image of the projection)."""
-        z = self.rng.normal(size=(n, dim))
-        return z / np.maximum(np.linalg.norm(z, axis=1, keepdims=True), 1e-12)
-
-    def sample_task(self, n_points: int, dim: Optional[int] = None):
-        """(X on the sphere, y) for one synthetic optimization problem."""
-        dim = int(dim or self.rng.integers(2, self.max_dim + 1))
-        X = self._sphere(n_points, dim)
-
-        A = self.rng.normal(scale=self.rng.uniform(0.5, 3.0),
-                            size=(self.n_features, dim))
-        b = self.rng.normal(scale=1.0, size=self.n_features)
-        w = self.rng.normal(scale=1.0 / np.sqrt(self.n_features),
-                            size=self.n_features)
-        nonlinear = np.tanh(X @ A.T + b) @ w
-
-        v = self.rng.normal(size=dim)
-        linear = X @ v
-        if self.rng.random() < self.linear_fraction:
-            # monotone-dominated task: optimum lies on the boundary
-            y = 3.0 * linear + 0.2 * nonlinear
-        else:
-            y = nonlinear + 0.3 * linear
-
-        y = y + self.rng.normal(scale=0.05, size=n_points)
-        return X, y
-
-    def sample_batch(self, batch_size: int, n_points: int):
-        """Padded (B, n_points, max_dim) inputs and (B, n_points) targets."""
-        Xs = np.zeros((batch_size, n_points, self.max_dim), dtype=np.float32)
-        Ys = np.zeros((batch_size, n_points), dtype=np.float32)
-        for b in range(batch_size):
-            X, y = self.sample_task(n_points)
-            Xs[b, :, : X.shape[1]] = X
-            # standardise per task: the PFN predicts on a normalised y scale
-            Ys[b] = (y - y.mean()) / (y.std() + 1e-8)
-        return Xs, Ys
-
-
-# -------------------------------------------------------------------- PFN ----
-
-
-class _PFNModule(nn.Module if _TORCH else object):
-    """Transformer that regresses E[y* | context] for in-context regression.
-
-    One sequence of context tokens (x, y) followed by query tokens (x, mask).
-    The attention mask lets everything attend to the context and stops queries
-    attending to one another, so a query's prediction never depends on which
-    other points happened to be queried alongside it.
-    """
-
-    def __init__(self, max_dim: int = 10, d_model: int = 64, n_heads: int = 4,
-                 n_layers: int = 3, dropout: float = 0.0):
-        _require_torch()
-        super().__init__()
-        self.max_dim = max_dim
-        self.d_model = d_model
-        # separate embeddings: a context token carries y, a query token does not
-        self.ctx_embed = nn.Linear(max_dim + 1, d_model)
-        self.qry_embed = nn.Linear(max_dim, d_model)
-        layer = nn.TransformerEncoderLayer(
-            d_model=d_model, nhead=n_heads, dim_feedforward=4 * d_model,
-            dropout=dropout, batch_first=True, norm_first=True,
-        )
-        self.encoder = nn.TransformerEncoder(
-            layer, num_layers=n_layers, enable_nested_tensor=False
-        )
-        self.head = nn.Sequential(
-            nn.LayerNorm(d_model), nn.Linear(d_model, d_model), nn.GELU(),
-            nn.Linear(d_model, 1),
-        )
-
-    def forward(self, x_ctx, y_ctx, x_qry):
-        """x_ctx (B,C,max_dim), y_ctx (B,C), x_qry (B,Q,max_dim) -> (B,Q)."""
-        b, c, _ = x_ctx.shape
-        q = x_qry.shape[1]
-        ctx = self.ctx_embed(torch.cat([x_ctx, y_ctx.unsqueeze(-1)], dim=-1))
-        qry = self.qry_embed(x_qry)
-        seq = torch.cat([ctx, qry], dim=1)
-
-        # True = "not allowed to attend"; queries are invisible to everyone
-        mask = torch.zeros(c + q, c + q, dtype=torch.bool, device=seq.device)
-        mask[:, c:] = True
-        mask[torch.arange(c, c + q), torch.arange(c, c + q)] = False
-
-        out = self.encoder(seq, mask=mask)
-        return self.head(out[:, c:, :]).squeeze(-1)
-
-
-class PFN:
-    """Trained PFN wrapped in the prior interface used by the surrogate."""
-
-    name = "pfn"
-
-    def __init__(self, module: "_PFNModule", max_dim: int, device: str = "cpu"):
-        _require_torch()
-        self.module = module.eval().to(device)
-        self.max_dim = int(max_dim)
+    def __init__(self, device: str = "cpu", random_state: int = 0, **kwargs):
+        try:
+            from tabpfn import TabPFNRegressor
+        except ImportError as exc:  # pragma: no cover - env-dependent
+            raise ImportError(
+                "TabPFN is required for the PFN prior. Install it with "
+                "`pip install tabpfn`, or pass prior='zero' / 'constant' to use "
+                "the dependency-free baselines."
+            ) from exc
+        self._regressor_cls = TabPFNRegressor
         self.device = device
+        self.random_state = int(random_state)
+        self._kwargs = kwargs
+        self._fitted = None
+        self._key = None
 
-    def _pad(self, X: np.ndarray) -> np.ndarray:
-        X = np.atleast_2d(np.asarray(X, dtype=np.float32))
-        if X.shape[1] > self.max_dim:
-            raise ValueError(
-                f"projected input has {X.shape[1]} dims but the PFN was trained "
-                f"for at most {self.max_dim}; retrain with a larger --max_dim"
-            )
-        out = np.zeros((X.shape[0], self.max_dim), dtype=np.float32)
-        out[:, : X.shape[1]] = X
-        return out
+    # -- context caching -----------------------------------------------------
+    @staticmethod
+    def _context_key(X: np.ndarray, y: np.ndarray):
+        """Cheap fingerprint of a context; equal keys => identical fit."""
+        return (
+            X.shape,
+            float(X.sum()),
+            float((X * X).sum()),
+            float(y.sum()),
+            float((y * y).sum()),
+        )
 
+    def _fit(self, X: np.ndarray, y: np.ndarray) -> None:
+        key = self._context_key(X, y)
+        if key == self._key and self._fitted is not None:
+            return
+        reg = self._regressor_cls(
+            device=self.device, random_state=self.random_state, **self._kwargs
+        )
+        reg.fit(X, y)
+        self._fitted, self._key = reg, key
+
+    # -- prior interface -----------------------------------------------------
     def mean(self, X_ctx, y_ctx, X_query) -> np.ndarray:
-        """Posterior-mean prediction, returned on the original y scale."""
+        """Posterior-mean prediction on the original y scale."""
+        Xq = np.atleast_2d(np.asarray(X_query, dtype=float))
         y = np.asarray(y_ctx, dtype=float).reshape(-1)
-        Xq = self._pad(X_query)
-        if y.size == 0:
+        if y.size == 0:                     # no context: nothing to condition on
             return np.zeros(Xq.shape[0], dtype=float)
-        mu, sd = float(y.mean()), float(y.std())
-        if sd < 1e-12:                      # a constant context carries no shape
-            return np.full(Xq.shape[0], mu)
 
-        Xc = self._pad(X_ctx)
-        yc = ((y - mu) / sd).astype(np.float32)
-        with torch.no_grad():
-            pred = self.module(
-                torch.from_numpy(Xc).unsqueeze(0).to(self.device),
-                torch.from_numpy(yc).unsqueeze(0).to(self.device),
-                torch.from_numpy(Xq).unsqueeze(0).to(self.device),
+        # shapes are checked BEFORE the constant-context shortcut, so a
+        # malformed context is reported rather than silently short-circuited
+        Xc = np.atleast_2d(np.asarray(X_ctx, dtype=float))
+        if Xc.shape[0] != y.size:
+            raise ValueError(
+                f"context has {Xc.shape[0]} rows but {y.size} targets"
             )
-        return pred.squeeze(0).cpu().numpy().astype(float) * sd + mu
+        if Xq.shape[1] != Xc.shape[1]:
+            raise ValueError(
+                f"query has {Xq.shape[1]} features but the context has "
+                f"{Xc.shape[1]}"
+            )
+        if y.std() < 1e-12:                 # a constant context carries no shape
+            return np.full(Xq.shape[0], float(y.mean()))
 
-
-def train_pfn(
-    max_dim: int = 10,
-    steps: int = 2000,
-    batch_size: int = 32,
-    n_context: int = 24,
-    n_query: int = 16,
-    d_model: int = 64,
-    n_heads: int = 4,
-    n_layers: int = 3,
-    lr: float = 1e-3,
-    seed: int = 0,
-    device: str = "cpu",
-    log_every: int = 200,
-):
-    """Fit a PFN on synthetic prior draws. Returns (PFN, history)."""
-    _require_torch()
-    torch.manual_seed(seed)
-    sampler = SphericalPriorSampler(max_dim=max_dim, seed=seed)
-    module = _PFNModule(max_dim=max_dim, d_model=d_model, n_heads=n_heads,
-                        n_layers=n_layers).to(device)
-    opt = torch.optim.Adam(module.parameters(), lr=lr)
-    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=max(steps, 1))
-
-    module.train()
-    history = []
-    n_points = n_context + n_query
-    for step in range(steps):
-        X, Y = sampler.sample_batch(batch_size, n_points)
-        X = torch.from_numpy(X).to(device)
-        Y = torch.from_numpy(Y).to(device)
-        x_ctx, y_ctx = X[:, :n_context], Y[:, :n_context]
-        x_qry, y_qry = X[:, n_context:], Y[:, n_context:]
-
-        pred = module(x_ctx, y_ctx, x_qry)
-        loss = torch.mean((pred - y_qry) ** 2)
-        opt.zero_grad()
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(module.parameters(), 1.0)
-        opt.step()
-        sched.step()
-
-        history.append(float(loss.item()))
-        if log_every and (step % log_every == 0 or step == steps - 1):
-            recent = float(np.mean(history[-log_every:]))
-            print(f"step {step:5d}  loss {loss.item():.4f}  mean {recent:.4f}",
-                  flush=True)
-
-    return PFN(module, max_dim=max_dim, device=device), history
-
-
-def save_pfn(pfn: "PFN", path: str, **meta) -> None:
-    _require_torch()
-    torch.save(
-        {
-            "state_dict": pfn.module.state_dict(),
-            "max_dim": pfn.max_dim,
-            "d_model": pfn.module.d_model,
-            "meta": meta,
-        },
-        path,
-    )
-
-
-def load_pfn(path: str, device: str = "cpu") -> "PFN":
-    _require_torch()
-    ckpt = torch.load(path, map_location=device, weights_only=False)
-    sd = ckpt["state_dict"]
-    d_model = ckpt.get("d_model", 64)
-    n_layers = 1 + max(
-        int(k.split(".")[2]) for k in sd if k.startswith("encoder.layers.")
-    )
-    n_heads = ckpt.get("meta", {}).get("n_heads", 4)
-    module = _PFNModule(max_dim=ckpt["max_dim"], d_model=d_model,
-                        n_heads=n_heads, n_layers=n_layers)
-    module.load_state_dict(sd)
-    return PFN(module, max_dim=ckpt["max_dim"], device=device)
+        self._fit(Xc, y)
+        pred = np.asarray(self._fitted.predict(Xq), dtype=float).reshape(-1)
+        return pred
 
 
 def build_prior(spec, device: str = "cpu"):
-    """Resolve a prior from a name, a checkpoint path, or an object."""
+    """Resolve a prior from a name or an object.
+
+    "pfn" and "tabpfn" both mean TabPFN -- the PFN prior is TabPFN now, and the
+    former name is kept so existing configs keep working. Checkpoint paths are
+    no longer accepted: there is no local PFN left to load.
+    """
     if spec is None or spec == "zero":
         return ZeroPFN()
     if spec == "constant":
         return ConstantPFN()
+    if spec in ("pfn", "tabpfn"):
+        return TabPFNPrior(device=device)
     if isinstance(spec, str):
-        return load_pfn(spec, device=device)
+        raise ValueError(
+            f"unknown prior {spec!r}. The local PFN (and its checkpoints) was "
+            "replaced by TabPFN; use 'tabpfn', 'zero', 'constant', or pass a "
+            "prior object implementing mean(X_ctx, y_ctx, X_query)."
+        )
     return spec

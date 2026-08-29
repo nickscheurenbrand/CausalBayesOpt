@@ -207,6 +207,7 @@ def run_oracle_boundary_tracking(
         "True_Parents": true_parents,
         "Intervention_Ranges": intervention_ranges,
         "Epsilon_Fraction": model.boundary_eps_frac,
+        "Target": graph.target,
         "Oracle": True,
         "Kernel_Type": kernel_type,
     }

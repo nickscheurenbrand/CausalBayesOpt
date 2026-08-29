@@ -12,9 +12,9 @@ acquisition consumes, assembled from the four appendix pieces:
        whose weights are the CURRENT marginal parent posterior, refreshed on
        every rebuild -- so the geometry moves as beliefs about causal relevance
        move.
-  E.4  The zero prior mean is replaced by a PFN evaluated in that geometry,
-       m_pi(x) = m_PFN(phi_pi(x)), which stays informative where the data do not
-       reach.
+  E.4  The zero prior mean is replaced by a PFN -- TabPFN -- evaluated in that
+       geometry, m_pi(x) = m_PFN(phi_pi(x)), which stays informative where the
+       data do not reach.
   E.5  Posterior uncertainty comes from spherical Bayesian linear regression on
        psi(x~), giving p(f | D) = N(m_PFN + psi' mu_beta, psi' Sigma_beta psi).
   E.6  Together these are GP(m_PFN(phi_pi(x)), k_sphere(phi_pi(x), phi_pi(x'))).
@@ -23,12 +23,13 @@ acquisition consumes, assembled from the four appendix pieces:
 
 Usage mirrors PARENT_SCALE::
 
-    model = GEOMETRY_SCALE(graph=graph, prior="checkpoints/pfn.pt", ...)
+    model = GEOMETRY_SCALE(graph=graph, prior="tabpfn", ...)
     model.set_values(D_O, D_I, exploration_set)
     results = model.run_algorithm(T=30)
 
-``prior`` accepts a PFN checkpoint path, "zero" (the E.4 ablation, i.e. a
-classical zero-mean prior on the same geometry), "constant", or a prior object.
+``prior`` accepts "tabpfn" (the E.4 prior mean; "pfn" is kept as an alias),
+"zero" (the E.4 ablation, i.e. a classical zero-mean prior on the same
+geometry), "constant", or a prior object.
 """
 
 import logging

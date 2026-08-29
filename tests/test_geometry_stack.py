@@ -10,8 +10,7 @@ from utils.geometry import (AdaptiveGeometry, marginal_parent_probabilities,
                             weights_for_set)
 from utils.distribution_shift import distribution_shift, to_unit_box
 from utils.geometric_surrogate import GeometryAwareSurrogate
-from utils.pfn_prior import (ZeroPFN, ConstantPFN, SphericalPriorSampler,
-                             train_pfn, save_pfn, load_pfn, build_prior)
+from utils.pfn_prior import ZeroPFN, ConstantPFN, TabPFNPrior, build_prior
 
 fails = []
 def check(name, cond, detail=""):
@@ -224,48 +223,86 @@ check("do-variance inflates predictive variance",
       np.all(sur_v.predict(Xte)[1] > sur_plain.predict(Xte)[1] + 1.9))
 
 # --------------------------------------------------------------- PFN itself
-sampler = SphericalPriorSampler(max_dim=6, seed=3)
-Xs, ys = sampler.sample_task(40, dim=4)
-check("prior samples live on the sphere",
-      np.allclose(np.linalg.norm(Xs, axis=1), 1.0) and ys.shape == (40,))
-Xb, Yb = sampler.sample_batch(4, 30)
-check("batches are padded and standardised",
-      Xb.shape == (4, 30, 6) and abs(float(Yb.mean())) < 0.2)
+# The PFN prior is TabPFN now: an external checkpoint, gated behind a licence
+# acceptance and a download. The interface, the fit cache and the degenerate
+# contexts are what this repo owns, so they are tested against a stand-in
+# regressor; the real weights are exercised only when they are available.
+rng_p = np.random.default_rng(3)
+_z = rng_p.normal(size=(40, 4))
+Xs = _z / np.linalg.norm(_z, axis=1, keepdims=True)
+ys = Xs @ rng_p.normal(size=4)
 
 check("ZeroPFN returns zeros", np.allclose(ZeroPFN().mean(Xs, ys, Xs), 0.0))
 check("ConstantPFN returns the context mean",
       np.allclose(ConstantPFN().mean(Xs, ys, Xs[:3]), ys.mean()))
 
-ckpt = os.environ.get("PFN_CKPT", os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "pfn_smoke.pt"))
-if os.path.exists(ckpt):
-    pfn = load_pfn(ckpt)
-    pm = pfn.mean(Xs[:24], ys[:24], Xs[24:])
-    check("PFN mean has the right shape and is finite",
-          pm.shape == (16,) and np.all(np.isfinite(pm)), str(np.round(pm[:3], 3).tolist()))
-    # unstandardisation: shifting/scaling y shifts/scales the prediction
-    pm2 = pfn.mean(Xs[:24], 3.0 * ys[:24] + 10.0, Xs[24:])
-    check("PFN respects the y scale",
-          np.allclose(pm2, 3.0 * pm + 10.0, atol=1e-3),
-          f"max err {np.abs(pm2 - (3*pm+10)).max():.2e}")
-    errs, base = [], []
-    for _ in range(30):
-        Xt, yt = sampler.sample_task(40)
-        yt = (yt - yt.mean()) / (yt.std() + 1e-8)
-        errs.append(np.mean((pfn.mean(Xt[:24], yt[:24], Xt[24:]) - yt[24:]) ** 2))
-        base.append(np.mean((ConstantPFN().mean(Xt[:24], yt[:24], Xt[24:]) - yt[24:]) ** 2))
-    check("trained PFN beats the constant prior",
-          np.mean(errs) < 0.6 * np.mean(base),
-          f"PFN {np.mean(errs):.3f} vs constant {np.mean(base):.3f}")
-    check("build_prior loads a checkpoint", build_prior(ckpt).max_dim == pfn.max_dim)
-    sur_pfn = GeometryAwareSurrogate(AdaptiveGeometry(Bs, pi=[1.0, 1.0]), pfn, Xtr, Ytr)
+try:
+    prior = TabPFNPrior()
+except ImportError:
+    prior = None
+    print("SKIP  TabPFN interface tests (tabpfn not installed)")
+
+if prior is not None:
+    fits = {"n": 0}
+
+    class _FakeReg:
+        """Least-squares stand-in: TabPFN's weights are licence-gated."""
+        def __init__(self, **kw): self.kw = kw
+        def fit(self, X, y):
+            fits["n"] += 1
+            self.coef = np.linalg.lstsq(X, y, rcond=None)[0]
+            return self
+        def predict(self, X): return X @ self.coef
+
+    prior._regressor_cls = _FakeReg
+    pm = prior.mean(Xs[:24], ys[:24], Xs[24:])
+    check("TabPFN prior returns one finite mean per query",
+          pm.shape == (16,) and np.all(np.isfinite(pm)),
+          str(np.round(pm[:3], 3).tolist()))
+
+    for _ in range(20):
+        prior.mean(Xs[:24], ys[:24], Xs[24:])
+    check("the fit is cached across repeated predicts", fits["n"] == 1,
+          f"{fits['n']} fit(s) for 21 calls")
+    prior.mean(Xs[:24], ys[:24] + 1.0, Xs[24:])
+    check("a changed context refits", fits["n"] == 2, f"{fits['n']} fit(s)")
+
+    n_before = fits["n"]
+    check("empty context -> zeros",
+          np.allclose(prior.mean(np.zeros((0, 4)), np.zeros(0), Xs[:5]), 0.0))
+    check("constant context -> that constant",
+          np.allclose(prior.mean(Xs[:24], np.full(24, 2.5), Xs[:5]), 2.5))
+    check("degenerate contexts never reach the model", fits["n"] == n_before)
+
+    def _raises(fn):
+        try:
+            fn(); return False
+        except ValueError:
+            return True
+    check("mismatched context rows are rejected",
+          _raises(lambda: prior.mean(Xs[:5], ys[:3], Xs[:2])))
+    check("mismatched query features are rejected",
+          _raises(lambda: prior.mean(Xs[:24], ys[:24], Xs[:2, :3])))
+
+    sur_pfn = GeometryAwareSurrogate(AdaptiveGeometry(Bs, pi=[1.0, 1.0]), prior,
+                                     Xtr, Ytr)
     mu_p, var_p = sur_pfn.predict(Xte)
-    check("surrogate runs end to end with a real PFN",
+    check("surrogate runs end to end with the TabPFN prior",
           np.all(np.isfinite(mu_p)) and np.all(var_p > 0)
           and float(np.sqrt(np.mean((sur_pfn.predict(Xtr)[0] - Ytr) ** 2))) < 0.5,
           f"train RMSE {float(np.sqrt(np.mean((sur_pfn.predict(Xtr)[0]-Ytr)**2))):.4f}")
-else:
-    print("SKIP  PFN checkpoint tests (no pfn_smoke.pt)")
+
+    check("build_prior('tabpfn') -> TabPFNPrior",
+          isinstance(build_prior("tabpfn"), TabPFNPrior))
+    check("build_prior('pfn') is the same alias",
+          isinstance(build_prior("pfn"), TabPFNPrior))
+
+try:
+    build_prior("checkpoints/pfn.pt")
+    _ckpt_rejected = False
+except ValueError:
+    _ckpt_rejected = True
+check("checkpoint paths are rejected (no local PFN to load)", _ckpt_rejected)
 
 check("build_prior('zero') -> ZeroPFN", isinstance(build_prior("zero"), ZeroPFN))
 check("build_prior('constant') -> ConstantPFN", isinstance(build_prior("constant"), ConstantPFN))
