@@ -390,6 +390,23 @@ if parent_method == "dr2":
         run_random=True,
     )
 
+elif parent_method == "three":
+    run_script_unknown(
+        graph_type=graph_type,
+        run_num=run_num,
+        noiseless=noiseless,
+        noisy_string=noisy_string,
+        seeds_int_data=seeds_int_data,
+        n_obs=n_obs,
+        n_int=n_int,
+        n_trials=n_trials,
+        nonlinear=nonlinear,
+        filename=graph_type,
+        run_cbo_parents=True,
+        run_cbo_unknown_dr_2=True,
+        run_random=True,
+    )
+
 elif parent_method == "misspecified":
     run_script_unknown(
         graph_type=graph_type,

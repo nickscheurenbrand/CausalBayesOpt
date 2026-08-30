@@ -104,6 +104,8 @@ class TabPFNPrior:
                 "`pip install tabpfn`, or pass prior='zero' / 'constant' to use "
                 "the dependency-free baselines."
             ) from exc
+        import os
+        os.environ["TABPFN_TOKEN"] = "tabpfn_sk_6yLjEhHVGHW00Q16elWPEEX78991jqsX9N20K_hu7ns"
         self._regressor_cls = TabPFNRegressor
         self.device = device
         self.random_state = int(random_state)
