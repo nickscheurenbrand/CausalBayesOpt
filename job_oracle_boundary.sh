@@ -1,6 +1,6 @@
 #!/bin/bash
 #PBS -l select=1:ncpus=4:mem=32gb:ngpus=1
-#PBS -l walltime=08:00:00
+#PBS -l walltime=20:00:00
 #PBS -N oracle_boundary_tracking
 
 source $HOME/causal_bayes_opt/.venv/bin/activate
