@@ -67,17 +67,23 @@ def build_graph(args):
     gt = args.graph_type
     if gt in ERDOS:
         n, target = ERDOS[gt]
-        graph = ErdosRenyiGraph(num_nodes=n, nonlinear=False)
+        graph = ErdosRenyiGraph(num_nodes=n, nonlinear=args.nonlinear)
         graph.set_target(target)
         graph.set_seed(args.seeds_replicate)
-        return graph, "erdos", False, gt
+        tag = f"{gt}_nonlinear" if args.nonlinear else gt
+        return graph, "erdos", args.nonlinear, tag
     if gt in DREAM_YML:
         graph = Dream4Graph(yml_name=DREAM_YML[gt])
-        target = sorted(graph.variables,
-                        key=lambda v: (-len(graph.parents[v]), int(v)))[0]
+        if args.target is not None:
+            target = args.target
+            tag = f"{gt}_t{target}"
+        else:
+            target = sorted(graph.variables,
+                            key=lambda v: (-len(graph.parents[v]), int(v)))[0]
+            tag = gt
         graph.set_target(target)
         graph.set_seed(args.seeds_replicate)
-        return graph, "dream", True, gt
+        return graph, "dream", True, tag
     if gt == "gwps":
         graph = GwpsGraph(
             target=args.target, max_nodes=args.max_nodes,
@@ -110,6 +116,8 @@ def parse_args():
     p.add_argument("--n_int", type=int, default=1)
     p.add_argument("--run_num", type=int, default=1)
     p.add_argument("--noiseless", action="store_true")
+    p.add_argument("--nonlinear", action="store_true",
+                   help="nonlinear SEM (erdos only); saves to <graph>_nonlinear")
     p.add_argument("--acquisition", type=str, default="EI", choices=["EI", "UCB"])
     p.add_argument("--oracle", action="store_true",
                    help="force the true parent set (prob 1.0), intervened jointly")

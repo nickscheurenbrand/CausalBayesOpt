@@ -8,6 +8,11 @@ from typing import List, Tuple
 os.chdir("..")
 os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.3"
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+# PBS sets CUDA_VISIBLE_DEVICES to a GPU UUID, which cdt cannot parse at
+# import time (ast.literal_eval fails). Normalise it to an index before the
+# cdt import chain below (graphs.graph_chain -> diffcbed -> cdt).
+if os.environ.get("CUDA_VISIBLE_DEVICES", "").startswith("GPU-"):
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 if os.getcwd() not in sys.path:
     sys.path.append(os.getcwd())
 

@@ -57,6 +57,12 @@ def parse_args():
     p.add_argument("--prior_mean", type=str, default="pfn",
                    choices=["pfn", "pfn+do", "do", "zero"])
     p.add_argument("--no_adapt_geometry", action="store_true")
+    p.add_argument("--nonlinear", action="store_true",
+                   help="nonlinear SEM (erdos only); saves to <graph>_nonlinear")
+    p.add_argument("--target", type=str, default=None,
+                   help="override target node (dream/gwps); dream saves to "
+                        "<graph>_t<target>. Applies to all --graphs, so pass one "
+                        "graph at a time when targets differ.")
     p.add_argument("--device", type=str, default="cuda")
     p.add_argument("--allow_cpu_fallback", action="store_true",
                    help="run on CPU instead of aborting when cuda is missing")
@@ -129,6 +135,10 @@ def main():
             cmd.append("--oracle")
         if args.no_adapt_geometry:
             cmd.append("--no_adapt_geometry")
+        if args.nonlinear:
+            cmd.append("--nonlinear")
+        if args.target is not None:
+            cmd += ["--target", args.target]
 
         print(f"\n===== [{i}/{len(jobs)}] {variant} {graph} run{run} =====",
               flush=True)

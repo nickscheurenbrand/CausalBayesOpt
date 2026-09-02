@@ -13,7 +13,9 @@ import networkx as nx
 import numpy as np
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_EDGE_CSV = os.path.join(_HERE, "..", "..", "data", "gwps_direct_edges.csv")
+# graphs/ lives at the repo root (moved from algorithms/graphs/), so data/ is one
+# level up, not two.
+DEFAULT_EDGE_CSV = os.path.join(_HERE, "..", "data", "gwps_direct_edges.csv")
 
 
 def _load_edges(edge_csv):
