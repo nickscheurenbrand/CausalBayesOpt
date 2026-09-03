@@ -6,7 +6,8 @@ parent_method "three" (used by job_erdos_50_100.sh).
 Mirrors gwps_cbo_script.py for the PARENT_SCALE (dr2) run, then adds the
 true-parent CBO and RANDOM_SCALE runs exactly as run_script_unknown does for
 Erdos. Output filenames match the Erdos "three" convention so the results_erdos
-notebooks/regexes work unchanged, but land in results/gwps_three/.
+notebooks/regexes work unchanged, but land in results/Gwps<max_nodes>/
+(e.g. results/Gwps40/ for the default size-40 run).
 """
 
 import argparse
@@ -83,7 +84,7 @@ def build_graph(args):
 
 
 def run(args):
-    results_dir = "results/gwps_three"
+    results_dir = f"results/Gwps{args.max_nodes}"
     os.makedirs(results_dir, exist_ok=True)
     n_obs, n_int, run_num = args.n_observational, args.n_int, args.run_num
 
