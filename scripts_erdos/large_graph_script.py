@@ -29,6 +29,7 @@ from graphs.graph_4_nodes import Graph4Nodes
 from graphs.graph_5_nodes import Graph5Nodes
 from graphs.graph_6_nodes import Graph6Nodes
 from graphs.graph_chain import ChainGraph
+from graphs.graph_dream import Dream4Graph
 from graphs.graph_erdos_renyi import ErdosRenyiGraph
 from graphs.toy_graph import ToyGraph
 from scripts.base_script import parse_args
@@ -54,6 +55,8 @@ def set_graph(graph_type: str, nonlinear: bool = False) -> GraphStructure:
         "Erdos100",
         "Erdos100_2",
         "Erdos100_3",
+        "Dream50",
+        "Dream100",
     ]
     if graph_type == "Toy":
         graph = ToyGraph()
@@ -86,6 +89,17 @@ def set_graph(graph_type: str, nonlinear: bool = False) -> GraphStructure:
     elif graph_type == "Erdos100_3":
         graph = ErdosRenyiGraph(num_nodes=100, nonlinear=nonlinear)
         graph.set_target("16")
+    elif graph_type == "Dream50":
+        # InSilicoSize50-Ecoli1 DREAM4 network (50 nodes). The default target
+        # (last node) has no parents, which breaks the run_cbo_parents step, so
+        # pick the node with the most parents (node 19, 5 parents).
+        graph = Dream4Graph(yml_name="InSilicoSize50-Ecoli1", nonlinear=nonlinear)
+        graph.set_target("19")
+    elif graph_type == "Dream100":
+        # InSilicoSize100-Ecoli1 DREAM4 network (100 nodes). Node 41 has the
+        # most parents (5); the default last node has only 1.
+        graph = Dream4Graph(yml_name="InSilicoSize100-Ecoli1", nonlinear=nonlinear)
+        graph.set_target("41")
     return graph
 
 
