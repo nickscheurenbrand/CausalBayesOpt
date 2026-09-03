@@ -5,3 +5,5 @@ ceo_venv/
 *log
 model_checkpoints/
 tmp/
+.venv/
+.venv-plot/

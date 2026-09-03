@@ -2,7 +2,9 @@
 large_graph_script.py builds them) and compute the boundary fraction per
 iteration from the stored Intervention_Value. Dumps a sidecar per (graph, kind)
 that the plot notebook reads:  results/<graph>/cbou_boundary_200_2<ns>.pickle
-containing a numpy array of shape (n_runs, n_iters).
+containing a numpy array of shape (n_runs, n_iters), plus
+results/<graph>/cbou_ranges_200_2<ns>.pickle mapping "run<k>" -> {var: [lo, hi]},
+which the intervention-position dot plot needs to normalise CBO-U by its own box.
 
 Run as a cluster job (needs the graph stack); do NOT run on the login node.
 """
@@ -61,6 +63,7 @@ def main():
             nonlinear = ns == "_nonlinear"
             base = f"results/{graph}"
             trajs, chk_in, chk_tot = [], 0, 0
+            ranges_by_run = {}
             for run_num, seed in SEEDS.items():
                 fn = f"{base}/run{run_num}_cbo_unknown_dr2_results_{N_OBS}_{N_INT}{ns}.pickle"
                 if not os.path.exists(fn):
@@ -68,6 +71,7 @@ def main():
                 res = pickle.load(open(fn, "rb"))
                 ranges = ranges_for(n, target, nonlinear, seed)
                 traj, ir, tot = boundary_traj(res, ranges)
+                ranges_by_run[f"run{run_num}"] = {v: list(b) for v, b in ranges.items()}
                 trajs.append(traj)
                 chk_in += ir
                 chk_tot += tot
@@ -78,9 +82,13 @@ def main():
             out = f"{base}/cbou_boundary_{N_OBS}_{N_INT}{ns}.pickle"
             with open(out, "wb") as f:
                 pickle.dump(arr, f)
+            out_r = f"{base}/cbou_ranges_{N_OBS}_{N_INT}{ns}.pickle"
+            with open(out_r, "wb") as f:
+                pickle.dump(ranges_by_run, f)
+
             frac_in = chk_in / chk_tot if chk_tot else float("nan")
             print(f"{graph}{ns}: {arr.shape[0]} runs, mean boundary {arr.mean():.3f}, "
-                  f"values-within-range {frac_in:.3f} -> {out}", flush=True)
+                  f"values-within-range {frac_in:.3f} -> {out}, {out_r}", flush=True)
 
 
 if __name__ == "__main__":

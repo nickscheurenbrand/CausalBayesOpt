@@ -128,6 +128,23 @@ def parse_args():
         help="This argument determines how we are learning the parent method",
     )
     parser.add_argument("--graph_type", type=str, default="Erdos10")
+    parser.add_argument(
+        "--reseed_sem",
+        action="store_true",
+        help="call graph.set_seed(seeds_replicate) before sampling, so replicates "
+        "actually vary the SEM noise draw. Without it graph.rng keeps the "
+        "ErdosRenyiGraph constructor default (17) for every replicate -- "
+        "np.random.seed() in sample_model does NOT reach a default_rng "
+        "Generator. This is what scripts_geometry/geometry_boundary_script.py "
+        "does, so pass it to match the CBO-U-Geo runs.",
+    )
+    parser.add_argument(
+        "--results_subdir",
+        type=str,
+        default=None,
+        help="write under results/<results_subdir>/ instead of results/<graph_type>/, "
+        "so a rerun does not overwrite existing pickles",
+    )
     parser.add_argument("--acquisition", type=str, default="EI")
 
     parser.add_argument(

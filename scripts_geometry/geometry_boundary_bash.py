@@ -63,6 +63,11 @@ def parse_args():
                    help="override target node (dream/gwps); dream saves to "
                         "<graph>_t<target>. Applies to all --graphs, so pass one "
                         "graph at a time when targets differ.")
+    # gwps-only knobs; forwarded only for --graphs gwps, ignored by the others
+    p.add_argument("--max_nodes", type=int, default=60)
+    p.add_argument("--top_k_parents", type=int, default=8)
+    p.add_argument("--weight_scale", type=float, default=3.0)
+    p.add_argument("--noise_sigma", type=float, default=1.0)
     p.add_argument("--device", type=str, default="cuda")
     p.add_argument("--allow_cpu_fallback", action="store_true",
                    help="run on CPU instead of aborting when cuda is missing")
@@ -139,6 +144,13 @@ def main():
             cmd.append("--nonlinear")
         if args.target is not None:
             cmd += ["--target", args.target]
+        if graph == "gwps":
+            cmd += [
+                "--max_nodes", str(args.max_nodes),
+                "--top_k_parents", str(args.top_k_parents),
+                "--weight_scale", str(args.weight_scale),
+                "--noise_sigma", str(args.noise_sigma),
+            ]
 
         print(f"\n===== [{i}/{len(jobs)}] {variant} {graph} run{run} =====",
               flush=True)
