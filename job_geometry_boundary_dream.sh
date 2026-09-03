@@ -1,6 +1,6 @@
 #!/bin/bash
 #PBS -l select=1:ncpus=4:mem=32gb:ngpus=1
-#PBS -l walltime=32:00:00
+#PBS -l walltime=16:00:00
 #PBS -N geometry_boundary_dream
 
 source $HOME/causal_bayes_opt/.venv/bin/activate
@@ -24,22 +24,12 @@ LOG=$HOME/causal_bayes_opt/results/boundary_tracking_dream_geometry/geometry_dre
 mkdir -p $HOME/causal_bayes_opt/results/boundary_tracking_dream_geometry
 
 {
-python geometry_boundary_bash.py \
-    --graphs Size50-Ecoli1 \
-    --target 19 \
-    --runs 3 \
-    --variants baseline \
-    --prior tabpfn \
-    --acquisition EI \
-    --n_observational 200 \
-    --n_trials 30 \
-    --n_int 2 \
-    --device cuda
 
 python geometry_boundary_bash.py \
     --graphs Size100-Ecoli1 \
     --target 41 \
     --runs 3 \
+    --start_run 2 \
     --variants baseline \
     --prior tabpfn \
     --acquisition EI \
