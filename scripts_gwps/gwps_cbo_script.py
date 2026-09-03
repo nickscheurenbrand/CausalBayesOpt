@@ -17,8 +17,13 @@ import sys
 os.chdir("..")
 os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.3"
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-if os.environ.get("CUDA_VISIBLE_DEVICES", "").startswith("GPU-"):
+_cvd = os.environ.get("CUDA_VISIBLE_DEVICES")
+if _cvd is not None and _cvd.startswith("GPU-"):
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+elif _cvd is None or _cvd.strip() == "":
+    # CPU-only node: cdt ast.literal_eval's CUDA_VISIBLE_DEVICES on import, so
+    # give it a parseable empty list rather than letting the import blow up.
+    os.environ["CUDA_VISIBLE_DEVICES"] = "[]"
 if os.getcwd() not in sys.path:
     sys.path.append(os.getcwd())
 _algorithms_path = os.path.join(os.getcwd(), "algorithms")
@@ -51,6 +56,11 @@ def parse_args():
     p.add_argument("--n_int", type=int, default=1)
     p.add_argument("--run_num", type=int, default=1)
     p.add_argument("--noiseless", action="store_true")
+    p.add_argument("--out_suffix", type=str, default="",
+                   help="if set (e.g. '_reseeded'), write the pickle in the "
+                        "notebook convention to results/Gwps<max_nodes><out_suffix>/"
+                        "run<k>_cbo_unknown_dr2_results_<n_obs>_<n_int>.pickle "
+                        "instead of the default results/gwps/ single-run name")
     return p.parse_args()
 
 
@@ -111,13 +121,20 @@ def run(args):
         "Obs_Y_Std": obs_y_std,
     }
 
-    results_dir = "results/gwps"
+    if args.out_suffix:
+        # notebook convention: matches gwps_three_script.py's Gwps<n>/ output, so
+        # the comparison notebooks read this CBO-U-only rerun as the baseline.
+        results_dir = f"results/Gwps{args.max_nodes}{args.out_suffix}"
+        base = (f"run{args.run_num}_cbo_unknown_dr2_results_"
+                f"{args.n_observational}_{args.n_int}")
+    else:
+        results_dir = "results/gwps"
+        ws = str(args.weight_scale).replace(".", "p")
+        base = (
+            f"run{args.run_num}_gwps_cbo_unknown_dr2_{args.n_observational}_"
+            f"{args.n_int}_n{args.max_nodes}_ws{ws}"
+        )
     os.makedirs(results_dir, exist_ok=True)
-    ws = str(args.weight_scale).replace(".", "p")
-    base = (
-        f"run{args.run_num}_gwps_cbo_unknown_dr2_{args.n_observational}_"
-        f"{args.n_int}_n{args.max_nodes}_ws{ws}"
-    )
     with open(f"{results_dir}/{base}.pickle", "wb") as f:
         pickle.dump(results_dict, f)
     logging.info(f"Saved GWPS CBO-U results to {results_dir}/{base}.pickle")
