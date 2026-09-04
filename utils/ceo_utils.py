@@ -243,9 +243,7 @@ def update_posterior_model_aggregate(
     posterior: np.ndarray,
 ) -> List[GPyModelWrapper]:
     """
-    Update the posterior of the gaussian process if it was intervened on in the previous timestep
-    The do_functions is now a list of all variables for all graphs, the partial sets up the function
-    to compute the newly defined mean and variance function
+    Updates the GP posterior for the set(s) intervened on in the previous timestep, using do_functions aggregated over all graphs.
     """
     # update the Gaussian Processes
     if trial_observed:
@@ -296,9 +294,7 @@ def update_posterior_model_aggregate_2(
     kernel_type: str = "rbf",
 ) -> List[GPyModelWrapper]:
     """
-    Update the posterior of the gaussian process if it was intervened on in the previous timestep
-    The do_functions is now a list of all variables for all graphs, the partial sets up the function
-    to compute the newly defined mean and variance function
+    Updates the GP posterior for the set(s) intervened on in the previous timestep, using do_functions aggregated over all graphs.
     """
     # update the Gaussian Processes
     # update all the models if we observed in the previous trial

@@ -1,24 +1,5 @@
-"""
-Baseline boundary-tracking experiment on the DREAM (dream4) gene networks.
-
-Structural copy of scripts_erdos/boundary_tracking_script.py, but builds a
-Dream4Graph (InSilicoSize50 / InSilicoSize100 E. coli network) instead of an
-Erdos-Renyi graph. Runs CBO-U (PARENT_SCALE, dr2 variant) while tracking, per
-iteration:
-  - the intervention boundary percentage (fraction of intervened dimensions
-    within +- eps of the intervention-range boundary)
-  - the posterior over parent sets of the target
-
-NOTE (nonlinear only): Dream4Graph builds its environment with nonlinear=True
-hardcoded, so the SEM is nonlinear. The boundary-bias hypothesis was derived
-for LINEAR monotone effects, so this run is exploratory -- "does a boundary
-bias appear at all under a nonlinear SEM?" -- not a direct replication of the
-linear-Erdos result. PARENT_SCALE is therefore run with nonlinear=True.
-
-Saves the raw tracking data as a pickle under
-results/boundary_tracking_dream/{graph_type}/ using the same schema as the
-Erdos boundary script, so results_erdos/boundary_bias_analysis.py works on it.
-"""
+"""Baseline boundary-tracking on DREAM (dream4) gene networks: structural copy of scripts_erdos/boundary_tracking_script.py
+using a Dream4Graph (nonlinear SEM) instead of Erdos-Renyi. Saves under results/boundary_tracking_dream/{graph_type}/."""
 
 import argparse
 import logging
@@ -64,12 +45,8 @@ GRAPH_TYPE_TO_YML = {
 
 
 def pick_target(graph: GraphStructure) -> str:
-    """
-    Deterministically choose a target: the variable with the most parents
-    (ties broken by lowest integer index). Size50/100 DREAM nets have no
-    hardcoded target, and a target with parents is required for the boundary /
-    P_True_Parents signals to be meaningful.
-    """
+    """Deterministically choose the variable with the most parents (ties broken
+    by lowest index), since Size50/100 DREAM nets have no hardcoded target."""
     candidates = sorted(graph.variables, key=lambda v: (-len(graph.parents[v]), int(v)))
     best = candidates[0]
     if len(graph.parents[best]) == 0:
@@ -115,7 +92,7 @@ def parse_args():
         "--target",
         type=str,
         default=None,
-        help="target node (string index); if omitted, the node with the most parents",
+        help="Target node (default: max in-degree)",
     )
     p.add_argument("--seeds_replicate", type=int, default=71)
     p.add_argument("--n_observational", type=int, default=200)

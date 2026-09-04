@@ -1,25 +1,5 @@
-r"""Boundary-induced distribution shift, Delta_t (appendix E.2).
-
-As optimization proceeds the empirical sampling distribution
-
-    q_t(x) = (1/t) sum_i delta(x - x_i)
-
-concentrates near the boundary of the intervention box and pulls away from the
-intervention distribution p(x) (uniform over the box: the design measure the
-surrogate's prior implicitly assumes). E.2 quantifies this by
-
-    Delta_t = D(q_t(x) || p(x)).
-
-One caveat that dictates the implementation: q_t is ATOMIC, so KL(q_t || p) is
-not defined against a density -- it diverges. Every estimator here therefore
-either bins the box (KL/JS on histograms with Laplace smoothing) or uses a
-divergence that is well defined between an empirical measure and a continuous
-one (Wasserstein-1, energy distance). They agree qualitatively; the binned ones
-are bounded and easiest to read, the transport ones need no bin choice.
-
-All of them are computed on the UNIT box: each coordinate is mapped to [0, 1]
-by its own intervention range, so different variables and graphs are comparable
-and p is uniform on [0, 1]^d by construction.
+r"""Boundary-induced distribution shift, Delta_t = D(q_t(x) || p(x)) (appendix E.2), between the empirical sampling distribution and the uniform intervention distribution.
+Since q_t is atomic, estimators here either bin the unit box (KL/JS with Laplace smoothing) or use a divergence well-defined against an empirical measure (Wasserstein-1, energy distance).
 """
 
 from typing import Dict, Sequence
@@ -49,10 +29,7 @@ def _histogram(U: np.ndarray, n_bins: int) -> np.ndarray:
 
 def binned_kl(U: np.ndarray, n_bins: int = 10, alpha: float = 1.0) -> float:
     """KL(q_t || p) on per-coordinate histograms, averaged over coordinates.
-
-    Laplace smoothing (`alpha`) keeps empty bins from sending the KL to
-    infinity, which they otherwise always do once sampling concentrates.
-    """
+    Laplace smoothing (`alpha`) keeps empty bins from sending the KL to infinity once sampling concentrates."""
     counts = _histogram(U, n_bins)
     q = (counts + alpha) / (counts.sum(axis=1, keepdims=True) + alpha * n_bins)
     p = np.full(n_bins, 1.0 / n_bins)
@@ -71,10 +48,7 @@ def binned_js(U: np.ndarray, n_bins: int = 10, alpha: float = 1.0) -> float:
 
 def wasserstein1_uniform(U: np.ndarray) -> float:
     """Mean per-coordinate W_1(q_t, Uniform[0,1]) -- no binning needed.
-
-    For a 1-d empirical measure against the uniform, W_1 is the mean absolute
-    gap between the sorted samples and the uniform quantiles.
-    """
+    W_1 here is the mean absolute gap between sorted samples and uniform quantiles."""
     n, d = U.shape
     if n == 0:
         return 0.0
@@ -85,10 +59,7 @@ def wasserstein1_uniform(U: np.ndarray) -> float:
 
 def boundary_mass(U: np.ndarray, edge: float = 0.2) -> float:
     """Fraction of coordinates within `edge` of an end of their range.
-
-    Not a divergence, but the quantity the divergence is a proxy for; under p
-    it equals 2*edge, so values above that are the concentration itself.
-    """
+    Not a divergence but what it's a proxy for; under p this equals 2*edge, so values above that are the concentration itself."""
     if U.size == 0:
         return 0.0
     return float(np.mean((U <= edge) | (U >= 1.0 - edge)))
@@ -116,11 +87,8 @@ def distribution_shift(
     edge: float = 0.2,
     with_energy: bool = False,
 ) -> Dict[str, float]:
-    """All Delta_t estimators for the points evaluated so far.
-
-    Returns a dict with `kl`, `js`, `w1`, `boundary_mass`, `n` (and `energy`
-    when requested). `js` is the default headline number: bounded, symmetric,
-    and finite for any t including t = 1.
+    """All Delta_t estimators for the points evaluated so far, as a dict with `kl`, `js`, `w1`, `boundary_mass`, `n` (and `energy` when requested).
+    `js` is the default headline number: bounded, symmetric, and finite for any t including t = 1.
     """
     X = np.atleast_2d(np.asarray(X, dtype=float))
     if X.size == 0:

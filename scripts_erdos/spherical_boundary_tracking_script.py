@@ -1,20 +1,5 @@
-"""
-Same as boundary_tracking_script.py (CBO-U, PARENT_SCALE dr2 on Erdos-Renyi
-graphs, tracking the intervention-boundary percentage and the parent-set
-posterior), but the surrogate GP uses a spherical (stereographic-projection)
-kernel instead of the plain RBF core.
-
-Choose the projected kernel with --kernel:
-  * spherical_linear (default): linear/dot-product kernel on the projected
-    features (results/boundary_tracking_spherical/)
-  * spherical_rbf: RBF kernel on the projected features
-    (results/boundary_tracking_spherical_rbf/)
-
-Only the surrogate kernel changes -- everything else (causal prior, do-mean/
-do-variance, acquisition, boundary tracking) is identical, and results are
-written under a kernel-specific subdir so they do not collide with the RBF
-baseline or with each other.
-"""
+"""Same as boundary_tracking_script.py, but the surrogate GP uses a spherical (stereographic-projection) kernel instead of RBF;
+choose spherical_linear or spherical_rbf via --kernel. Results go to a kernel-specific results/boundary_tracking_spherical*/ subdir."""
 
 import argparse
 import logging
@@ -232,7 +217,7 @@ if __name__ == "__main__":
         type=str,
         default="spherical_linear",
         choices=list(RESULTS_SUBDIRS.keys()),
-        help="Projected surrogate kernel to use.",
+        help="projected surrogate kernel",
     )
     kernel_args, _ = kernel_parser.parse_known_args()
 

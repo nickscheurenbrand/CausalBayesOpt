@@ -1,39 +1,5 @@
-r"""Geometry-aware surrogate: PFN prior mean + spherical BLR (appendix E.5-E.7).
-
-Model, per intervention set I:
-
-    f(x) = beta' psi(x~) + eps,   beta ~ N(0, Sigma_beta0),  eps ~ N(0, sigma^2)
-    x~   = phi_pi(x)                                       (E.3, utils.geometry)
-    m(x) = m_PFN(x~)                                       (E.4, utils.pfn_prior)
-
-Bayesian linear regression is run on the PFN RESIDUAL, since the predictive mean
-in E.5 is ``m_PFN(x) + psi(x~)' mu_beta`` -- the weights explain what the global
-prior does not. With Gaussian noise the posterior is closed form:
-
-    Lambda   = Psi' Psi / sigma^2 + Sigma_beta0^{-1}
-    Sigma_beta = Lambda^{-1}
-    mu_beta  = Sigma_beta Psi' (y - m_PFN) / sigma^2
-
-giving p(f(x) | D) = N(m_PFN(x) + psi(x~)' mu_beta, psi(x~)' Sigma_beta psi(x~)),
-exactly E.5. Because <psi(x~), psi(x~')> IS ``k_sphere``, this weight-space model
-and the function-space GP of E.6, GP(m_PFN(phi_pi(x)), k_sphere(...)), are the
-same object -- the BLR form is used because it is exact, cheap, and needs no
-kernel inversion as the data concentrate near the boundary.
-
-sigma^2, the prior weight variance and the scale of the projection are set by
-maximising the log evidence over a small grid -- the analogue of
-``gpy_model.optimize()`` in the RBF path, keeping the posterior calibrated rather
-than fitted by hand. The projection scale matters more than the other two: it
-controls how much of the sphere the data occupy, and hence how curved the
-geometry is in the region being modelled, so leaving it fixed noticeably
-underfits.
-
-The class implements emukit's ``IModel``/``IDifferentiable``, so the EXISTING
-acquisition code path (``CausalExpectedImprovement`` and the gradient optimizer
-in ``utils.cbo_functions.get_new_x_y_list``) drives it unchanged -- which is the
-claim of E.7: the acquisition is untouched, only the posterior it consumes
-changes.
-"""
+r"""Geometry-aware surrogate: PFN prior mean + spherical BLR (appendix E.5-E.7). Runs BLR on the
+PFN residual over spherical features psi(x~); <psi,psi'> IS k_sphere, so this equals the E.6 GP."""
 
 from typing import Callable, Optional, Tuple
 
@@ -44,21 +10,8 @@ from utils.geometry import AdaptiveGeometry
 
 
 class GeometryAwareSurrogate(IModel, IDifferentiable):
-    """Unified geometry-aware surrogate for one intervention set.
-
-    Parameters
-    ----------
-    geometry : the adaptive geometry; its ``pi`` is refreshed each iteration.
-    prior : PFN-style prior with ``mean(X_ctx, y_ctx, X_query)``.
-    variance_adjustment : optional do-variance from the causal prior, added to
-        the predictive variance the way the repo's causal kernels add it to the
-        kernel diagonal. Pass None for the plain E.6 surrogate.
-    do_mean : optional do-mean. With ``prior_mean="pfn+do"`` the PFN models the
-        residual over the causal prior mean instead of replacing it.
-    prior_mean : "pfn" (E.4 as written), "pfn+do", "do", or "zero".
-    include_noise : add sigma^2 to the predictive variance. E.5 states the
-        latent variance, so this defaults to False.
-    """
+    """Unified geometry-aware surrogate for one intervention set. prior_mean selects "pfn" (E.4),
+    "pfn+do", "do", or "zero"; include_noise defaults False since E.5 states the latent variance."""
 
     def __init__(
         self,
@@ -194,13 +147,8 @@ class GeometryAwareSurrogate(IModel, IDifferentiable):
 
     # -- IDifferentiable -----------------------------------------------------
     def get_prediction_gradients(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """d mean / dx and d var / dx by central differences.
-
-        The BLR terms are analytic, but the PFN mean is a neural net evaluated
-        through the projection; one consistent finite-difference rule for both
-        keeps the gradient the acquisition sees self-consistent, and the input
-        dimension here is small enough that the 2D extra predicts are cheap.
-        """
+        """d mean / dx and d var / dx by central differences (uniform rule since the PFN mean
+        isn't analytically differentiable, unlike the BLR terms); input dim is small so cheap."""
         X = np.atleast_2d(np.asarray(X, dtype=float))
         n, d = X.shape
         dmean = np.zeros((n, d))

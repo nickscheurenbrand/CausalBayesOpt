@@ -23,27 +23,8 @@ def sample_from_SEM(
     seed: int = None,
     std: float = 0.1,
 ) -> OrderedDict:
-    """
-    Function to sample from a SEM, potentially with interventions or initial values.
-
-    Parameters
-    ----------
-    static_sem : OrderedDict
-        SEMs specifying the relationships among variables.
-    initial_values : dict, optional
-        Initial values of nodes, by default None.
-    interventions : dict, optional
-        Specifies interventions on variables, by default None.
-    epsilon : dict, optional
-        Specifies noise for each variable, by default standard Gaussian noise is used.
-    seed : int, optional
-        Random seed for reproducibility, by default None.
-
-    Returns
-    -------
-    OrderedDict
-        A sample from the SEM given previously implemented interventions or initial values.
-    """
+    """Draw one sample by walking `static_sem` in insertion order, which must be topological.
+    Each variable is set from `interventions`/`initial_values`, else its SEM function."""
     if seed is not None:
         rng = np.random.default_rng(seed)
     else:
@@ -79,27 +60,8 @@ def sample_from_SEM_iscm(
     std: float = 0.1,
     graph: GraphStructure = None,
 ) -> OrderedDict:
-    """
-    Function to sample from a SEM, potentially with interventions or initial values.
-
-    Parameters
-    ----------
-    static_sem : OrderedDict
-        SEMs specifying the relationships among variables.
-    initial_values : dict, optional
-        Initial values of nodes, by default None.
-    interventions : dict, optional
-        Specifies interventions on variables, by default None.
-    epsilon : dict, optional
-        Specifies noise for each variable, by default standard Gaussian noise is used.
-    seed : int, optional
-        Random seed for reproducibility, by default None.
-
-    Returns
-    -------
-    OrderedDict
-        A sample from the SEM given previously implemented interventions or initial values.
-    """
+    """Draw one sample by walking `static_sem` in insertion order, which must be topological.
+    Each variable is set from `interventions`/`initial_values`, else its SEM function."""
     if seed is not None:
         rng = np.random.default_rng(seed)
     else:
@@ -136,27 +98,8 @@ def sample_from_SEM_hat(
     seed: int = None,
     epsilon: Dict[str, float] = None,
 ) -> OrderedDict:
-    """
-    Function to sample from a SEM, considering interventions or initial values.
-
-    Parameters
-    ----------
-    static_sem : OrderedDict
-        SEMs specifying the relationships among variables.
-    graph : GraphStructure
-        The current graph we are sampling from
-    initial_values : dict, optional
-        Initial values of nodes, by default None.
-    interventions : dict, optional
-        Specifies interventions on variables, by default None.
-    seed : int, optional
-        Random seed for reproducibility, by default None.
-
-    Returns
-    -------
-    OrderedDict
-        A sample from the SEM given previously implemented interventions or initial values.
-    """
+    """Like `sample_from_SEM` but `static_sem` holds fitted GPs (estimated SEM), sampled in
+    `graph`'s topological order and predicted from parent values using the GP posterior mean."""
     # if seed:
     #     np.random.seed(seed)
     assert epsilon is not None
@@ -209,16 +152,8 @@ def sample_model(
     noiseless: bool = False,
     use_iscm: bool = False,
 ) -> dict:
-    """
-    Draws multiple samples from Bayesian Network.
-
-    Per variable the returned array is of the format: n_samples x timesteps in DBN.
-
-    Returns
-    -------
-    dict
-        Dictionary of n_samples per node in graph.
-    """
+    """Draws `sample_count` samples from the SEM, one call to sample_from_SEM(_iscm/_hat) each.
+    Returns {var: (n_samples, timesteps) array}."""
 
     if seed:
         np.random.seed(seed)
@@ -278,16 +213,8 @@ def sample_model_set_icm_params(
     graph: GraphStructure = None,
     noiseless: bool = False,
 ) -> dict:
-    """
-    Draws multiple samples from Bayesian Network.
-
-    Per variable the returned array is of the format: n_samples x timesteps in DBN.
-
-    Returns
-    -------
-    dict
-        Dictionary of n_samples per node in graph.
-    """
+    """Draws `sample_count` samples from the SEM, one call to sample_from_SEM(_iscm/_hat) each.
+    Returns {var: (n_samples, timesteps) array}."""
     if seed:
         np.random.seed(seed)
 
@@ -339,15 +266,7 @@ def create_grid_interventions(
     include_full_combination: bool = True,
     get_list_format: bool = False,
 ) -> List:
-    """Create both individual and combined grid interventions for given variable ranges.
-
-    Args:
-        ranges (OrderedDict): Ranges for each variable.
-        num_points (int): Number of points to sample in each range.
-
-    Returns:
-        list: List various interventions in the corresponding ranges
-    """
+    """Create individual and combined (up to `num_points` each) grid interventions per variable."""
     max_combinations = num_points
     grids = {
         var: np.linspace(min_val, max_val, num_points)
@@ -417,11 +336,8 @@ def draw_interventional_samples(
     graph: GraphStructure,
     n_int: int = 2,
 ) -> dict:
-    """
-    Draw interventional samples from the given list of interventions
-    This one only returns the output and the intervention, we are
-    effectively computing E[Y|do(X=x)]
-    """
+    """Draw interventional samples per exploration-set intervention, returning only the target
+    and intervened values -- effectively computing E[Y|do(X=x)]."""
     np.random.shuffle(interventions)
 
     interventional_data = {
@@ -471,11 +387,8 @@ def draw_interventional_samples_sem(
     noiseless: bool = True,
     use_iscm: bool = False,
 ) -> dict:
-    """
-    Draw interventional samples from the given list of interventions
-    This one returns samples from the entire SEM model, even after
-    an intervention has been performed
-    """
+    """Like `draw_interventional_samples` but returns samples for every SEM variable, not just
+    the target, after each intervention."""
     if seed is not None:
         np.random.seed(seed=seed)
 

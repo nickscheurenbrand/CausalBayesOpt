@@ -1,31 +1,5 @@
-"""Driver: GEOMETRY_SCALE boundary tracking on Erdos50 + Erdos100, on GPU.
-
-Runs the appendix-E loop (adaptive geometry + TabPFN prior mean + spherical BLR)
-over both graphs and N replicate seeds. Baseline only by default -- the parent
-set is inferred, not injected; pass --variants oracle (or baseline,oracle) to
-add the forced-true-parent runs. Everything is delegated to
-geometry_boundary_script.py, which owns the output schema.
-
-The GPU matters here and nowhere else in the repo: the TabPFN prior mean is
-evaluated on every acquisition evaluation (~1e3-1e4 per trial). The fit is
-cached per context, but the forward passes are not, so device="cuda" is the
-difference between hours and days. Everything else -- the doubly-robust parent
-posterior, the do-effects, EI -- is numpy/GPy and stays on CPU.
-
-Replicates vary --seeds_replicate, which reseeds the SEM sampling rng. The Erdos
-STRUCTURE is fixed by ErdosRenyiGraph(seed=17) and does not move, so all
-replicates share a target and true parent set and differ only in sampled data --
-matching the existing run1..run5 pickles.
-
-  cd scripts_geometry
-  python geometry_boundary_bash.py                       # tabpfn on cuda
-  python geometry_boundary_bash.py --variants oracle     # oracle instead
-  python geometry_boundary_bash.py --prior zero --device cpu   # E.4 ablation
-
-Output (from the inner script; the _oracle suffix only with --variants oracle):
-  results/boundary_tracking_erdos_geometry{_oracle}/{Erdos50,Erdos100}/
-      run{run}_cbo_unknown_dr2_boundary_EI_200_{n_int}.pickle
-"""
+"""Driver: GEOMETRY_SCALE boundary tracking (appendix-E adaptive geometry + TabPFN prior mean + spherical BLR) on
+Erdos50/100 over N replicate seeds; needs GPU. Delegates to geometry_boundary_script.py; --variants oracle adds forced-true-parent runs."""
 
 import argparse
 import os
@@ -44,10 +18,10 @@ def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--graphs", type=str, default=",".join(GRAPHS))
     p.add_argument("--runs", type=int, default=5,
-                   help="number of replicates; run r uses seed base_seed+r-1")
+                   help="number of replicates")
     p.add_argument("--base_seed", type=int, default=71)
     p.add_argument("--variants", type=str, default="baseline",
-                   help="comma-separated subset of {baseline, oracle}")
+                   help="comma-separated subset of baseline, oracle")
     p.add_argument("--n_observational", type=int, default=200)
     p.add_argument("--n_trials", type=int, default=30)
     p.add_argument("--n_int", type=int, default=2)
@@ -58,11 +32,9 @@ def parse_args():
                    choices=["pfn", "pfn+do", "do", "zero"])
     p.add_argument("--no_adapt_geometry", action="store_true")
     p.add_argument("--nonlinear", action="store_true",
-                   help="nonlinear SEM (erdos only); saves to <graph>_nonlinear")
+                   help="nonlinear SEM (erdos only)")
     p.add_argument("--target", type=str, default=None,
-                   help="override target node (dream/gwps); dream saves to "
-                        "<graph>_t<target>. Applies to all --graphs, so pass one "
-                        "graph at a time when targets differ.")
+                   help="override target node (dream/gwps)")
     # gwps-only knobs; forwarded only for --graphs gwps, ignored by the others
     p.add_argument("--max_nodes", type=int, default=60)
     p.add_argument("--top_k_parents", type=int, default=8)
@@ -70,7 +42,7 @@ def parse_args():
     p.add_argument("--noise_sigma", type=float, default=1.0)
     p.add_argument("--device", type=str, default="cuda")
     p.add_argument("--allow_cpu_fallback", action="store_true",
-                   help="run on CPU instead of aborting when cuda is missing")
+                   help="fall back to CPU")
     p.add_argument("--dry_run", action="store_true")
     return p.parse_args()
 

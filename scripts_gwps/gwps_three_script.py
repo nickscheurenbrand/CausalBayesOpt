@@ -1,14 +1,5 @@
-"""
-Run the three-algorithm comparison (CBO true-parents + PARENT_SCALE dr2 +
-RANDOM_SCALE) once on a GwpsGraph -- the gwps analogue of large_graph_script.py's
-parent_method "three" (used by job_erdos_50_100.sh).
-
-Mirrors gwps_cbo_script.py for the PARENT_SCALE (dr2) run, then adds the
-true-parent CBO and RANDOM_SCALE runs exactly as run_script_unknown does for
-Erdos. Output filenames match the Erdos "three" convention so the results_erdos
-notebooks/regexes work unchanged, but land in results/Gwps<max_nodes>/
-(e.g. results/Gwps40/ for the default size-40 run).
-"""
+"""Run the three-algorithm comparison (CBO true-parents + PARENT_SCALE dr2 + RANDOM_SCALE) once on a GwpsGraph, the gwps
+analogue of large_graph_script.py's parent_method "three". Output filenames match Erdos convention, in results/Gwps<max_nodes>/."""
 
 import argparse
 import logging
@@ -44,7 +35,7 @@ logging.basicConfig(
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--target", type=str, default=None, help="target ENSG id (auto if omitted)")
+    p.add_argument("--target", type=str, default=None, help="Target ENSG id")
     p.add_argument("--max_nodes", type=int, default=60)
     p.add_argument("--top_k_parents", type=int, default=8)
     p.add_argument("--weight_scale", type=float, default=3.0)

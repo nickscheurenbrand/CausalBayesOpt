@@ -329,12 +329,7 @@ class PARENT_SCALE(BASE):
     def return_elements_for_new_exploration_set(
         self, data_x_list: Dict, data_y_list: Dict
     ):
-        """
-        In the algorithm, the exploration set becomes smaller due to less
-        variables being possible parents of the target variable, many of the variables
-        are set up for the initial exploration set. Thus, a lot of the variables
-        will start to change as the exploration set decreases
-        """
+        """Remap data/parameter-spaces/target-classes onto the shrunk exploration set."""
         data_x_list_new = []
         data_y_list_new = []
         for i, es in enumerate(self.exploration_set):
@@ -373,11 +368,7 @@ class PARENT_SCALE(BASE):
     def compute_boundary_percentage(
         self, var_to_intervene: Tuple[str], intervention_values: np.ndarray
     ) -> Tuple[float, int, int]:
-        """
-        Computes the fraction of intervened dimensions whose value lies within
-        +- eps of the intervention-range boundary, where eps is
-        boundary_eps_frac of the range width of each variable
-        """
+        """Fraction of intervened dims within +- eps of the range boundary (eps = boundary_eps_frac * range width)."""
         intervention_ranges = self.graph.interventional_range_data
         n_dims = len(var_to_intervene)
         n_on_boundary = 0
@@ -398,12 +389,8 @@ class PARENT_SCALE(BASE):
         input_space,
         iteration: int = 0,
     ):
-        """Build/refresh one surrogate per exploration set.
-
-        Seam for alternative surrogates: subclasses override this to change the
-        model without touching the algorithm loop. The default is the standard
-        causal-prior GP (RBF or spherical core, per ``self.kernel_type``).
-        """
+        """Build/refresh one surrogate per exploration set; subclasses override to swap models.
+        Default is the standard causal-prior GP (RBF or spherical core, per ``self.kernel_type``)."""
         return ceo_utils.update_posterior_model_aggregate_2(
             self.exploration_set,
             trial_observed,

@@ -24,11 +24,7 @@ def graph_setup(
     n_obs: int = 100,
     n_int: int = 2,
 ) -> Tuple[GraphStructure]:
-    """
-    The function does the setup for the toy_graph which inherits from GraphStructure
-    It returns many important variables that will be necessary for both the CBO and
-    the BO algorithm
-    """
+    """Set up the requested graph and return the variables needed by CBO/BO."""
     if seed is not None:
         np.random.seed(seed)
 

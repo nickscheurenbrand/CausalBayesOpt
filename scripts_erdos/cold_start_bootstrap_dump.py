@@ -1,24 +1,5 @@
-"""
-Standalone check for the boundary-tracking cold-start finding: does the
-individual doubly-robust bootstrap parent-set selector (used to build the
-iteration-0 candidate posterior in PARENT_SCALE.determine_initial_probabilities,
-see algorithms/PARENT_SCALE_algorithm.py:145-187) ever propose a parent-set
-with more than one variable, or does it structurally cap out at a single
-variable per bootstrap draw?
-
-Only needs the observational data (D_O) -- determine_initial_probabilities()
-never looks at interventional data or runs any CBO trial, so this is cheap:
-no GP surrogate fitting, no 30-trial acquisition loop. It replicates exactly
-what that method does, but keeps a handle on the DoublyRobustModel instance
-so we can inspect robust_model.markov_dags, the raw list of per-bootstrap
-parent-set estimates (only the aggregated proportions normally survive into
-PARENT_SCALE.posterior_history[0]).
-
-Run with the same venv as boundary_tracking_script.py:
-    python cold_start_bootstrap_dump.py --graph_type Erdos100 --num_bootstraps 10
-    python cold_start_bootstrap_dump.py --graph_type Erdos100 --num_bootstraps 200
-    python cold_start_bootstrap_dump.py --graph_type Erdos50 --num_bootstraps 10
-"""
+"""Checks whether the doubly-robust bootstrap selector (PARENT_SCALE_algorithm.py:145-187) ever proposes >1 variable per draw.
+Cheap: observational data only, no GP/CBO. Usage: --graph_type NAME --num_bootstraps N."""
 
 import argparse
 import os
@@ -70,15 +51,13 @@ def parse_args():
         "--seeds",
         type=str,
         default=None,
-        help="comma-separated data seeds (overrides --seed); each reseeds the "
-        "observational sample, so inclusion is tested across DIFFERENT datasets "
-        "as well as across bootstrap draws",
+        help="comma-separated data seeds (overrides --seed)",
     )
     parser.add_argument("--num_bootstraps", type=int, default=10)
     parser.add_argument(
         "--joint",
         action="store_true",
-        help="Use the joint (non-individual) selector instead of the per-variable one",
+        help="use joint selector, not per-variable",
     )
     return parser.parse_args()
 

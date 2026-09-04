@@ -1,31 +1,5 @@
-"""
-Repeats the cold-start candidate-parent-set construction (everything that
-runs before iteration 0 of the CBO trial loop) N times against the SAME
-observational/interventional data, to measure how much the iteration-0
-posterior varies purely from the doubly-robust bootstrap's unseeded RNG
-(DoublyRobustModel.run_method resamples via plain np.random.choice with no
-seed set -- see posterior_model/model.py:75).
-
-For each repeat, this drives the real PARENT_SCALE code path exactly as
-run_algorithm() does up to (not including) fit_samples_to_graphs() / the CBO
-loop -- i.e. data_and_prior_setup() then define_all_possible_graphs() -- so
-the resulting self.graphs/self.posterior is exactly what becomes
-posterior_history[0] in the real pipeline. No GP fitting, no acquisition, no
-CBO trials: this only exercises the (data_and_prior_setup, ~76 min/repeat)
-part of the pipeline that determine_initial_probabilities lives in.
-
-It also captures the RAW bootstrap output (before the Bayesian update from
-the initial interventional samples, and before the error_tol=1e-5 filtering
-in define_all_possible_graphs) by wrapping determine_initial_probabilities,
-so each repeat reports both:
-  - raw: what the 10-bootstrap doubly-robust selector proposed
-  - final: what's left after the initial D_I Bayesian update + error_tol
-    filtering (== posterior_history[0] in the real pipeline)
-
-Run with the same venv as boundary_tracking_script.py:
-    python cold_start_repeat_check.py --graph_type Erdos50 --num_repeats 5
-    python cold_start_repeat_check.py --graph_type Erdos100 --num_repeats 5
-"""
+"""Repeats cold-start candidate-parent-set construction N times on the same data to measure iteration-0 posterior variance
+from the doubly-robust bootstrap's unseeded RNG (posterior_model/model.py:75). No GP/CBO; reports raw + final posteriors."""
 
 import argparse
 import os

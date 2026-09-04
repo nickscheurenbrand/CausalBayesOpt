@@ -108,9 +108,8 @@ class DoFunctions:
 
 class CausalRBF(Stationary):
     """
-    This is the causal rabial basis kernel function which inherits from the
-    stationary class, mostly taken from the CBO package, but made some small changes
-    This is pretty much taken directly from the github page
+    Causal RBF kernel (from the CBO package): adds a do-variance adjustment
+    term to the standard RBF kernel to encode the causal prior.
     """
 
     def __init__(
@@ -146,13 +145,7 @@ class CausalRBF(Stationary):
         self.rescale_variance = Param("rescale_variance", rescale_variance, Logexp())
 
     def to_dict(self):
-        """
-        Convert the object into a json serializable dictionary.
-
-        Note: It uses the private method _save_to_input_dict of the parent.
-
-        :return dict: json serializable dictionary containing the needed information to instantiate the object
-        """
+        """Convert the object into a json serializable dictionary."""
 
         input_dict = super(CausalRBF, self)._save_to_input_dict()
         input_dict["class"] = "GPy.kern.RBF"
@@ -310,28 +303,8 @@ class CausalRBF(Stationary):
 
 class CausalSphericalLinear(Kern):
     r"""
-    Spherical-linear surrogate kernel: an inverse stereographic projection of
-    the (centred, lengthscale-scaled) inputs onto the unit sphere followed by a
-    linear (dot-product) kernel with learnable constant/linear term weights and
-    a global lengthscale.  This is a GPy port of the BoTorch/gpytorch
-    ``SphericalLinearKernel`` (see ``spherical_linear.py``) so it drops into the
-    existing GPy surrogate pipeline in place of the RBF core.
-
-    Same do-variance adjustment as :class:`CausalRBF`, so the causal prior is
-    preserved -- only the RBF core is swapped for the spherical-linear core::
-
-        K(x, x') = variance * <phi(x), phi(x')>
-                   + sqrt(vadj(x)) * sqrt(vadj(x'))
-
-    where ``phi: R^D -> R^{D+2}`` maps ``x`` via the stereographic projection
-    (which lands on the unit sphere, so ``||phi(x)|| = 1`` and ``K(x, x) =
-    variance`` exactly like the RBF).
-
-    As requested, only the outer ``variance`` is optimised.  The projection
-    shape parameters (per-dimension ``lengthscale``, term ``coeffs`` and the
-    global-lengthscale fraction) are fixed at their init values.  ``lengthscale``
-    is registered (constrained fixed) purely so ``safe_optimization`` can read
-    ``kern.lengthscale[0]``.
+    GPy port of BoTorch's spherical-linear kernel: projects inputs onto the unit sphere then applies a linear kernel, with the same do-variance adjustment as :class:`CausalRBF`.
+    Only ``variance`` is optimised; the projection geometry is fixed.
     """
 
     def __init__(
@@ -491,22 +464,8 @@ class CausalSphericalLinear(Kern):
 
 class CausalSphericalRBF(Kern):
     r"""
-    Spherical-RBF surrogate kernel: the same inverse stereographic projection
-    onto the unit sphere as :class:`CausalSphericalLinear`, but with an RBF
-    (squared-exponential) kernel applied to the projected features instead of a
-    linear (dot-product) one::
-
-        K(x, x') = variance * exp(-0.5 * ||proj(x) - proj(x')||^2 / l^2)
-                   + sqrt(vadj(x)) * sqrt(vadj(x'))
-
-    ``proj: R^D -> R^{D+1}`` lands on the unit sphere, so ``K(x, x) = variance``
-    exactly like the RBF and spherical-linear cores, and the do-variance
-    adjustment of :class:`CausalRBF` plugs in identically (causal prior kept).
-
-    The projection geometry (per-dimension ``proj_lengthscale`` and the global
-    lengthscale) is fixed at init.  The outer ``variance`` and the RBF
-    ``lengthscale`` are optimised -- the RBF lengthscale is cheap to fit because
-    the projected features do not depend on it.
+    Same unit-sphere projection as :class:`CausalSphericalLinear`, but with an RBF kernel applied to the projected features instead of a linear one; do-variance adjustment as in :class:`CausalRBF`.
+    Projection geometry is fixed; ``variance`` and the RBF ``lengthscale`` are optimised.
     """
 
     def __init__(
@@ -715,9 +674,7 @@ class CausalGradientAcquisitionOptimizer(AcquisitionOptimizerBase):
     """
 
     def __init__(self, space: ParameterSpace, num_anchor_points: int = 100) -> None:
-        """
-        param space: The parameter space spanning the search problem.
-        """
+        """param space: The parameter space spanning the search problem."""
         # print('self.num_anchor_points', num_anchor_points)
         self.num_anchor_points = num_anchor_points
         super().__init__(space)
@@ -726,11 +683,7 @@ class CausalGradientAcquisitionOptimizer(AcquisitionOptimizerBase):
         self, acquisition: Acquisition, context_manager: ContextManager
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Implementation of abstract method.
-        Taking into account gradients if acquisition supports them.
-
-        See AcquisitionOptimizerBase._optimizer for parameter descriptions.
-        See class docstring for implementation details.
+        Implementation of abstract method; uses gradients if the acquisition supports them.
         """
 
         # Take negative of acquisition function because they are to be maximised and the optimizers minimise
@@ -800,15 +753,7 @@ class CausalExpectedImprovement(Acquisition):
         jitter: float = float(0),
     ) -> None:
         """
-        This acquisition computes for a given input the improvement over the current best observed value in
-        expectation. For more information see:
-
-        Efficient Global Optimization of Expensive Black-Box Functions
-        Jones, Donald R. and Schonlau, Matthias and Welch, William J.
-        Journal of Global Optimization
-
-        :param model: model that is used to compute the improvement.
-        :param jitter: parameter to encourage extra exploration.
+        Expected Improvement over the current best observed value (Jones, Schonlau & Welch, 1998).
         """
         self.model = model
         self.jitter = jitter
@@ -816,11 +761,7 @@ class CausalExpectedImprovement(Acquisition):
         self.task = task
 
     def evaluate(self, x: np.ndarray) -> np.ndarray:
-        """
-        Computes the Expected Improvement.
-
-        :param x: points where the acquisition is evaluated.
-        """
+        """Computes the Expected Improvement."""
 
         mean, variance = self.model.predict(x)
         standard_deviation = np.sqrt(variance)
@@ -837,11 +778,7 @@ class CausalExpectedImprovement(Acquisition):
         return improvement
 
     def evaluate_with_gradients(self, x: np.ndarray) -> Tuple:
-        """
-        Computes the Expected Improvement and its derivative.
-
-        :param x: locations where the evaluation with gradients is done.
-        """
+        """Computes the Expected Improvement and its derivative."""
 
         mean, variance = self.model.predict(x)
         standard_deviation = np.sqrt(variance)
@@ -871,13 +808,8 @@ class CausalExpectedImprovement(Acquisition):
 
 class CausalUpperConfidenceBound(Acquisition):
     """
-    Causal (Lower/Upper) Confidence Bound acquisition, matching the
-    CausalExpectedImprovement interface so it is a drop-in in get_new_x_y_list.
-
-    The acquisition optimiser MAXIMISES evaluate(x). For task == "min" we want
-    points with LOW predicted mean and HIGH uncertainty, i.e. maximise
-    beta*std - mean (the negative lower confidence bound). For task == "max" we
-    maximise the usual UCB mean + beta*std.
+    Causal (Lower/Upper) Confidence Bound acquisition, matching the CausalExpectedImprovement interface so it is a drop-in in get_new_x_y_list.
+    Since the optimiser MAXIMISES evaluate(x), task "min" maximises beta*std - mean (negative LCB) while "max" maximises mean + beta*std.
     """
 
     def __init__(
@@ -920,14 +852,7 @@ class CausalUpperConfidenceBound(Acquisition):
 def get_standard_normal_pdf_cdf(
     x: np.array, mean: np.array, standard_deviation: np.array
 ) -> Tuple[np.array, np.array, np.array]:
-    """
-    Returns pdf and cdf of standard normal evaluated at (x - mean)/sigma
-
-    :param x: Non-standardized input
-    :param mean: Mean to normalize x with
-    :param standard_deviation: Standard deviation to normalize x with
-    :return: (normalized version of x, pdf of standard normal, cdf of standard normal)
-    """
+    """Returns pdf and cdf of standard normal evaluated at (x - mean)/sigma."""
     u = (x - mean) / standard_deviation
     pdf = scipy.stats.norm.pdf(u)
     cdf = scipy.stats.norm.cdf(u)
@@ -936,13 +861,8 @@ def get_standard_normal_pdf_cdf(
 
 class Cost(Acquisition):
     """
-    Total cost of intervening on `evaluated_set`: the sum of the per-variable
-    cost functions, one per intervened dimension.
-
-    Generalised to any number of intervened variables. The previous version
-    hard-coded branches for 1/2/3 variables and asserted len(evaluated_set) <= 3,
-    which broke joint interventions on larger parent sets (e.g. the 5-parent
-    DREAM target or the 8-parent GWPS target).
+    Total cost of intervening on `evaluated_set`: sum of the per-variable cost functions, one per intervened dimension.
+    Generalised to any number of intervened variables (unlike the old hard-coded 1/2/3-variable version).
     """
 
     def __init__(self, costs_functions, evaluated_set):

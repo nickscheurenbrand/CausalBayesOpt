@@ -1,25 +1,5 @@
-"""Boundary tracking with the GEOMETRY_SCALE loop (appendix E).
-
-Same protocol and output schema as the existing boundary scripts, so
-results_erdos/boundary_bias_analysis.py and the notebooks work unchanged -- the
-only difference is the surrogate: adaptive geometry + PFN prior mean + spherical
-Bayesian linear regression, with EI untouched. The extra appendix-E diagnostics
-(Delta_t per iteration, the pi trajectory, per-surrogate hyperparameters) are
-saved alongside.
-
-Supports the same three families as scripts_random/random_boundary_script.py.
-
-  python scripts_geometry/geometry_boundary_script.py --graph_type Erdos50 \
-      --prior tabpfn --acquisition EI --noiseless --n_int 2
-
---prior zero runs the identical loop with m_PFN = 0, which is the ablation for
-E.4 (classical prior mean on the same adaptive geometry); --no_adapt_geometry
-fixes pi = 1 and ablates E.3.
-
-Output:
-  results/boundary_tracking_{family}_geometry{_oracle}/{tag}/
-      run{run}_cbo_unknown_dr2_boundary_{ACQ}_{n_obs}_{n_int}[_nonlinear].pickle
-"""
+"""Boundary tracking with the GEOMETRY_SCALE loop (appendix E: adaptive geometry + PFN prior mean + spherical BLR, EI
+untouched). Same protocol/schema as the other boundary scripts; --prior zero / --no_adapt_geometry give E.4/E.3 ablations."""
 
 import argparse
 import logging
@@ -117,21 +97,20 @@ def parse_args():
     p.add_argument("--run_num", type=int, default=1)
     p.add_argument("--noiseless", action="store_true")
     p.add_argument("--nonlinear", action="store_true",
-                   help="nonlinear SEM (erdos only); saves to <graph>_nonlinear")
+                   help="nonlinear SEM (erdos only)")
     p.add_argument("--acquisition", type=str, default="EI", choices=["EI", "UCB"])
     p.add_argument("--oracle", action="store_true",
-                   help="force the true parent set (prob 1.0), intervened jointly")
+                   help="force true parent set, intervened jointly")
     # appendix-E knobs
     p.add_argument("--prior", type=str, default="zero",
                    choices=["tabpfn", "pfn", "zero", "constant"],
-                   help="'tabpfn' (the E.4 prior; 'pfn' is an alias) or "
-                        "'zero'/'constant' (E.4 ablations)")
+                   help="tabpfn (E.4 prior) or zero/constant (ablations)")
     p.add_argument("--prior_mean", type=str, default="pfn",
                    choices=["pfn", "pfn+do", "do", "zero"])
     p.add_argument("--no_adapt_geometry", action="store_true",
-                   help="fix pi = 1, ablating the adaptive geometry of E.3")
+                   help="ablate adaptive geometry (fix pi=1)")
     p.add_argument("--no_do_variance", action="store_true",
-                   help="drop the causal do-variance from the predictive variance")
+                   help="drop causal do-variance term")
     p.add_argument("--pi_floor", type=float, default=1e-2)
     p.add_argument("--shift_bins", type=int, default=10)
     p.add_argument("--device", type=str, default="cpu")

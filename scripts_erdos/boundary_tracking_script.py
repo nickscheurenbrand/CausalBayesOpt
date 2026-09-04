@@ -1,13 +1,5 @@
-"""
-Runs CBO-U (PARENT_SCALE, dr2 variant) on Erdos-Renyi graphs while tracking
-per iteration:
-  - the intervention boundary percentage (fraction of intervened dimensions
-    within +- eps of the intervention-range boundary)
-  - the posterior over parent sets of the target
-
-Saves the raw tracking data as a pickle and per-run plots as PNGs under
-results/boundary_tracking/{graph_type}/.
-"""
+"""Runs CBO-U (PARENT_SCALE, dr2) on Erdos-Renyi graphs, tracking intervention boundary % and parent-set posterior per iteration.
+Saves tracking data + plots under results/boundary_tracking/{graph_type}/."""
 
 import logging
 import os

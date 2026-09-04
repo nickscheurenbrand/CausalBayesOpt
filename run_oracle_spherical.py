@@ -1,26 +1,6 @@
 #!/usr/bin/env python3
-"""Local runner for the spherical ORACLE boundary-tracking PBS jobs.
-
-Replicates these six job scripts locally, without PBS:
-
-    job_oracle_ecoli_spherical.sh       -> ecoli_linear
-    job_oracle_ecoli_spherical_rbf.sh   -> ecoli_rbf
-    job_oracle_erdos_spherical.sh       -> erdos_linear
-    job_oracle_erdos_spherical_rbf.sh   -> erdos_rbf
-    job_oracle_gwps_spherical.sh        -> gwps_linear
-    job_oracle_gwps_spherical_rbf.sh    -> gwps_rbf
-
-Each job runs its oracle boundary-tracking command(s) then the boundary-bias
-analysis, teeing all output to the same log file the shell script uses.
-
-Usage:
-    python run_oracle_spherical.py --all               # run every job
-    python run_oracle_spherical.py ecoli_linear         # run one or more jobs
-    python run_oracle_spherical.py erdos_linear erdos_rbf
-    python run_oracle_spherical.py --list               # list job names
-    python run_oracle_spherical.py --all --dry-run      # print commands only
-    python run_oracle_spherical.py ecoli_linear --no-log # stream to terminal
-"""
+"""Local runner replicating the six job_oracle_*_spherical[_rbf].sh PBS jobs (ecoli/erdos/gwps x linear/rbf), without PBS.
+Use --list for job names, --help for all flags."""
 
 import argparse
 import os
@@ -178,13 +158,12 @@ def main():
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("jobs", nargs="*",
-                        help="Job names to run (see --list).")
-    parser.add_argument("--all", action="store_true", help="Run every job.")
-    parser.add_argument("--list", action="store_true", help="List job names and exit.")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Print commands without running.")
+                        help="Job names (see --list)")
+    parser.add_argument("--all", action="store_true")
+    parser.add_argument("--list", action="store_true")
+    parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--no-log", action="store_true",
-                        help="Stream to stdout instead of the log file.")
+                        help="Stream to stdout")
     args = parser.parse_args()
 
     if args.list:

@@ -1,13 +1,5 @@
-"""Reconstruct each CBO-U run's intervention ranges (D_O min/max, exactly as
-large_graph_script.py builds them) and compute the boundary fraction per
-iteration from the stored Intervention_Value. Dumps a sidecar per (graph, kind)
-that the plot notebook reads:  results/<graph>/cbou_boundary_200_2<ns>.pickle
-containing a numpy array of shape (n_runs, n_iters), plus
-results/<graph>/cbou_ranges_200_2<ns>.pickle mapping "run<k>" -> {var: [lo, hi]},
-which the intervention-position dot plot needs to normalise CBO-U by its own box.
-
-Run as a cluster job (needs the graph stack); do NOT run on the login node.
-"""
+"""Reconstruct each CBO-U run's intervention ranges and compute the boundary fraction per iteration, dumping sidecars to
+results/<graph>/cbou_boundary_200_2<ns>.pickle for the plot notebook. Run as a cluster job, not on the login node."""
 import os
 import sys
 import pickle

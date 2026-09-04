@@ -1,16 +1,5 @@
-"""
-GwpsGraph: a GraphStructure over the GWPS (genome-wide Perturb-seq) gene network.
-
-The source model is the linear autoregressive SEM Y = YG + Xbeta + gamma, with
-G the direct-effect matrix (G[parent, child]) -- our extracted G_hat. CBO-U needs
-a DAG, so we carve a bounded acyclic subgraph around a target gene and build a
-linear-Gaussian SEM with the real G_hat weights (reusing
-define_SEM_causalenv_linear). A DAG's weighted adjacency is nilpotent, so
-r(G) = 0 and I - G is invertible by construction; (I-G)^-1 = sum over paths.
-
-Mirrors Dream4Graph but reads the pre-extracted data/gwps_direct_edges.csv
-(Exposure, Outcome, G_hat) instead of an XML topology, and needs no causal_env.
-"""
+"""GwpsGraph: a GraphStructure over the GWPS gene network. Carves a bounded acyclic
+subgraph around a target gene and builds a linear-Gaussian SEM from the extracted G_hat weights."""
 
 import logging
 from typing import Callable, Dict, Optional

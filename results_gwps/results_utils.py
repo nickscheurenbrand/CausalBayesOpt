@@ -9,7 +9,7 @@ import numpy as np
 import seaborn as sns
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 
-base_path = "/Users/jeandurand/Documents/Masters Thesis/causal_bayes_opt/results/Erdos"
+base_path = "/home/nscheurenbrand/CausalBayesOpt/results_erdos"
 
 
 # Function to load all results of a given type

@@ -28,9 +28,8 @@ from utils.cbo_classes import (
 
 
 def _data_bounds(X: np.ndarray) -> np.ndarray:
-    """Per-dimension (min, max) bounds from the training inputs, used to centre
-    and scale the stereographic projection. Degenerate (constant) dimensions are
-    padded to keep a non-zero span."""
+    """Per-dimension (min, max) bounds from the training inputs, used to centre and scale the stereographic projection.
+    Degenerate (constant) dimensions are padded to keep a non-zero span."""
     mins = X.min(axis=0).astype(float)
     maxs = X.max(axis=0).astype(float)
     degenerate = (maxs - mins) < 1e-9
@@ -49,11 +48,8 @@ def set_up_GP(
     kernel_type: str = "rbf",
 ) -> GPyModelWrapper:
     """
-    Setting up the Gaussian Process based on the previous computed interventional
-    mean function and interventional variance function.
-
-    kernel_type: "rbf" (default, unchanged behaviour) or "spherical_linear" to
-    use the stereographic-projection linear kernel in place of the RBF core.
+    Sets up the Gaussian Process from the precomputed interventional mean/variance functions.
+    kernel_type selects the kernel core: "rbf" (default), "spherical_linear", or "spherical_rbf".
     """
     if causal_prior:
         logging.info("Using the Causal Gaussian Prior")
@@ -162,9 +158,7 @@ def update_all_do_functions(
     exploration_set: List,
 ) -> List[DoFunctions]:
     """
-    This is for CBO algorithm when the variables in the exploration set changes. This changes
-    based on what is in the intervention set, as well as what was newly observed. Each of
-    these classes have a mean_function_do and var_function_do instance contained within them
+    Rebuilds the DoFunctions (mean_function_do/var_function_do) for CBO when the exploration set changes.
     """
     variables = graph.variables
     samples_dict = {
@@ -290,9 +284,8 @@ def get_new_x_y_list(
     ucb_beta: float = 2.0,
 ) -> Tuple[np.ndarray, List[List[float]]]:
     """
-    Get the new acquisitions for the all the elements in the exploration set.
-    acquisition: "EI" (causal expected improvement) or "UCB" (causal confidence
-    bound).
+    Get the new acquisitions for all the elements in the exploration set.
+    acquisition: "EI" (causal expected improvement) or "UCB" (causal confidence bound).
     """
     y_acquisition_list = [None] * len(exploration_set)
     x_new_list = [None] * len(exploration_set)
@@ -354,19 +347,7 @@ def define_initial_data_CBO(
 ):
     """
     Processes interventional data to identify optimal interventions based on a specified criterion (min/max).
-
-    Parameters:
-        interventional_data (dict): Dictionary of datasets containing interventions,
-                                    indexed by type and containing numpy arrays for each variable.
-        num_interventions (int): Number of interventions to consider in the optimization.
-        exploration_set (list): List of potential variables or configurations used in the interventions.
-        name_index (int): Index used for setting a seed for reproducibility.
-        manipulative_variables (list): List of variables that are manipulated.
-        outcome_variable (str): The variable used as the outcome for optimization.
-        task (str): Task to perform, either 'min' for minimization or 'max' for maximization.
-
-    Returns:
-        tuple: Tuple containing lists of X data, Y data, best intervention values, optimal Y value, and best variables.
+    Returns lists of X data, Y data, best intervention values, optimal Y value, and best variables.
     """
     assert task in ["min", "max"]
     data_x_list = []

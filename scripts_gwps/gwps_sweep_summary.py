@@ -1,12 +1,5 @@
-"""
-Summarise the GWPS weight-scale sweep: for each --weight_scale, how much CBO-U
-improved the target and whether it recovered the true parents. Runs on numpy +
-matplotlib only (pickles carry no heavy objects), so it works locally.
-
-Prints a table and saves results/gwps/plots/gwps_sweep.png with two panels:
-  left  : Best_Y per trial (absolute; note the SEM scale differs per weight_scale)
-  right : normalised improvement (Best_Y - Best_Y[0]) / obs-Y-std (comparable)
-"""
+"""Summarise the GWPS weight-scale sweep: for each --weight_scale, how much CBO-U improved the target and whether it
+recovered the true parents. Prints a table and saves results/gwps/plots/gwps_sweep.png."""
 
 import argparse
 import os

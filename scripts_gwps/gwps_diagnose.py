@@ -1,25 +1,5 @@
-"""
-Pre-run diagnostic for the GWPS CBO-U setup: how strong is the causal signal, and
-what --weight_scale gives CBO something detectable to optimise?
-
-Runs on numpy + networkx only (no GPy/jax), so you can run it locally before
-committing a full CBO-U job. It builds the same DAG subgraph GwpsGraph builds,
-then for a linear-Gaussian SEM Y = YG + noise it computes:
-
-  M = (I - W)^-1   (finite, since a DAG => r(G)=0)
-  do-effect slope of X on the target = M[X, target]
-     (total effect per unit of a hard do(X); forward paths only, so cutting X's
-      parents does not change it)
-  std of each node under the SEM: std_j = sqrt(sum_i M[i,j]^2) * noise_sigma
-  signal-to-noise of intervening on X:
-     SNR(X) = |slope(X)| * std_X / std_Y
-     (fraction of the target's std moved by a ~1-std intervention on X)
-
-Prints the target's direct parents, the strongest levers, and SNR at several
---weight_scale values so you can pick one where the best lever's SNR ~ 0.5-2.
-
-Run:  python scripts_gwps/gwps_diagnose.py            (from repo root or here)
-"""
+"""Pre-run diagnostic for the GWPS CBO-U setup: computes each node's do-effect slope and SNR analytically (numpy + networkx
+only, no GPy/jax) so you can pick a --weight_scale where the best lever's SNR ~ 0.5-2 before a full CBO-U job."""
 
 import argparse
 import os
@@ -55,7 +35,7 @@ def parse_args():
     p.add_argument("--top_k_parents", type=int, default=8)
     p.add_argument("--noise_sigma", type=float, default=1.0)
     p.add_argument("--scales", type=str, default="1,2,3,5,10",
-                   help="comma-separated --weight_scale values to compare")
+                   help="weight_scale values to compare")
     return p.parse_args()
 
 

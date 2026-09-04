@@ -206,11 +206,7 @@ class SyntheticGraph(GraphStructure):
         return mis, pomis, manipulative_variables
 
     def get_all_do(self):
-        """
-        The calculation of these do functions follow from the do_calculus of
-        the graph -> look at the appendix of the CBO paper for the
-        derivations
-        """
+        """Do-functions derived via do-calculus; see the CBO paper appendix."""
         logging.info("Getting the do-functions for the ToyGraph")
         do_dict = {}
         do_dict["compute_do_E"] = self.compute_do_E

@@ -1,34 +1,5 @@
-"""
-ORACLE variant of boundary_tracking_script.py: confound-closing experiment.
-
-The non-oracle runs showed a strong boundary bias in the intervention values
-ONLY on true-parent variables, and none on Erdos100 -- but in those 3 runs
-"true parent" is perfectly confounded with "small/medium graph" (all
-true-parent interventions came from Erdos20/50, all non-parent ones from
-Erdos100). So we cannot yet tell whether Erdos100 lacks boundary bias because
-it is large, or simply because its collapsed posterior made it intervene on
-non-parents.
-
-This script removes the confound by forcing the parent posterior to the TRUE
-parent set (probability 1.0), bypassing the doubly-robust bootstrap entirely,
-while keeping EVERYTHING ELSE identical -- same PARENT_SCALE acquisition, same
-GP surrogates, same boundary tracking. The exploration set then becomes exactly
-the true parents (as singletons), so Erdos100 is guaranteed to intervene on
-its real parents. If boundary bias appears here, the boundary mechanism works
-at scale and the earlier absence was entirely downstream of the posterior
-failure.
-
-The injection point is determine_initial_probabilities() -- the single place
-the candidate parent-set posterior is created. define_all_possible_graphs()
-then rebuilds the correct local structure around the target from it via
-graph.mispecify_graph(edges). Since there is only one hypothesis at prob 1.0,
-every subsequent per-trial posterior update leaves it at 1.0, so the
-exploration set stays pinned to the true parents for the whole run.
-
-Output pickle format is IDENTICAL to boundary_tracking_script.py (so
-boundary_bias_analysis.py --results_subdir boundary_tracking_oracle works on
-it), saved under results/boundary_tracking_oracle/{graph_type}/.
-"""
+"""ORACLE variant of boundary_tracking_script.py: forces the parent posterior to the TRUE parent set (prob 1.0), removing the
+true-parent/graph-size confound so even Erdos100 intervenes on real parents. Output saved under results/boundary_tracking_oracle/{graph_type}/."""
 
 import argparse
 import logging
@@ -75,12 +46,8 @@ KERNEL_SUFFIX = {
 
 def set_graph(graph_type: str, nonlinear: bool = False,
               target: str = None) -> GraphStructure:
-    """`target` overrides the built-in choice.
-
-    The built-in targets predate the ancestry stratification and some of them
-    (Erdos100 -> "80") sit in a tiny component with no mediated-ancestor pool,
-    so the mediation arms need a different one.
-    """
+    """`target` overrides the built-in choice, needed because some built-in
+    targets (e.g. Erdos100 -> "80") sit in a tiny component with no mediated-ancestor pool."""
     assert graph_type in ["Erdos20", "Erdos50", "Erdos100"]
     defaults = {"Erdos20": (20, "18"), "Erdos50": (50, "23"),
                 "Erdos100": (100, "80")}

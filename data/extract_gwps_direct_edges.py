@@ -1,15 +1,5 @@
-"""
-One-time preprocessing for the GWPS gene network.
-
-graph_data_gwps_rev1.csv is a 415 MB long-format 1428x1428 gene-gene effect table.
-The DIRECT causal edges are the rows with path_length == 1 (non-diagonal); their
-weight is the direct-effect coefficient G_hat (= G[parent, child] in the model
-Y = YG + Xbeta + gamma). This script streams the big file once and writes the
-small direct-edge list so GwpsGraph never has to touch the 415 MB file at runtime.
-
-Output: data/gwps_direct_edges.csv  with columns  Exposure,Outcome,G_hat
-Run:    python data/extract_gwps_direct_edges.py
-"""
+"""One-time preprocessing: streams the 415 MB graph_data_gwps_rev1.csv once to extract direct edges (path_length == 1)
+into data/gwps_direct_edges.csv, so GwpsGraph never touches the big file at runtime."""
 
 import csv
 import os

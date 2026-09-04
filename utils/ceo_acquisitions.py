@@ -245,9 +245,7 @@ class CausalEntropySearch(Acquisition):
 
     def evaluate(self, x: np.ndarray) -> np.ndarray:
         """
-        Computes the information gain, i.e the predicted change in entropy of p_min (the distribution
-        of the minimal value of the objective function) if we evaluate x.
-        :param x: points where the acquisition is evaluated.
+        Computes the information gain: predicted change in entropy of p_min if we evaluate x.
         """
 
         # Make new aquisition points

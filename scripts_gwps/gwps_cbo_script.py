@@ -1,12 +1,5 @@
-"""
-Run CBO-U (PARENT_SCALE, dr2) once on a GwpsGraph -- the genome-wide Perturb-seq
-gene network, as a DAG subgraph with a linear-Gaussian SEM using the real G_hat
-direct-effect weights.
-
-This is the "get CBO-U running first" step: a single end-to-end optimisation run,
-structured exactly like base_script_dream.py's run_cbo_unknown_dr_2 but on a
-GwpsGraph. Saves the results dict plus the integer-node -> ENSG gene map.
-"""
+"""Single end-to-end CBO-U (PARENT_SCALE, dr2) run on a GwpsGraph (DAG subgraph of the Perturb-seq network, linear-Gaussian
+SEM with real G_hat weights). Saves the results dict plus the integer-node -> ENSG gene map."""
 
 import argparse
 import logging
@@ -45,7 +38,7 @@ logging.basicConfig(
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--target", type=str, default=None, help="target ENSG id (auto if omitted)")
+    p.add_argument("--target", type=str, default=None, help="Target ENSG id")
     p.add_argument("--max_nodes", type=int, default=60)
     p.add_argument("--top_k_parents", type=int, default=8)
     p.add_argument("--weight_scale", type=float, default=1.0)
@@ -57,10 +50,7 @@ def parse_args():
     p.add_argument("--run_num", type=int, default=1)
     p.add_argument("--noiseless", action="store_true")
     p.add_argument("--out_suffix", type=str, default="",
-                   help="if set (e.g. '_reseeded'), write the pickle in the "
-                        "notebook convention to results/Gwps<max_nodes><out_suffix>/"
-                        "run<k>_cbo_unknown_dr2_results_<n_obs>_<n_int>.pickle "
-                        "instead of the default results/gwps/ single-run name")
+                   help="Pickle filename suffix")
     return p.parse_args()
 
 

@@ -1,42 +1,5 @@
-r"""Prior-data Fitted Network prior mean (appendix E.4), backed by TabPFN.
-
-A classical GP surrogate assumes ``m(x) = 0``. Under boundary-concentrated
-observations that assumption extrapolates badly: everywhere away from the
-cluster of evaluated points the posterior mean decays to zero, which is
-precisely the region the optimizer must reason about. E.4 replaces it with
-
-    m_pi(x) = m_PFN(phi_pi(x)),
-
-a globally learned prior over optimization problems, evaluated in the adaptive
-geometry of E.3.
-
-A PFN is trained by supervised learning on functions SAMPLED FROM A PRIOR: given
-a context of (x, y) pairs and a query x, it regresses the posterior mean of the
-prior conditioned on that context. Once trained it is a fixed, amortised
-predictor -- no per-run fitting -- and it stays informative with few, clustered
-observations because the prior it learned is global rather than data-driven.
-
-The prior used here is **TabPFN**, an externally trained, published PFN whose
-own training prior is generated from structural causal models. Using it in place
-of a bespoke, locally trained PFN removes "the authors chose their own prior"
-as an objection to E.4, at the cost of a prior that is no longer matched to the
-unit-sphere geometry the surrogate works in, and whose balance between
-boundary-optimal and interior-optimal response surfaces is not under our
-control. See :class:`TabPFNPrior` for the operational consequences.
-
-This module provides
-
-* :class:`TabPFNPrior` -- the E.4 prior: TabPFN's in-context posterior mean,
-  evaluated on the already-projected inputs.
-* :class:`ZeroPFN`, :class:`ConstantPFN` -- dependency-free baselines. ZeroPFN
-  recovers the classical zero-mean GP exactly and is the ablation for E.4.
-
-All priors share the interface
-
-    prior.mean(X_ctx, y_ctx, X_query) -> (n_query,) ndarray
-
-where the X are ALREADY projected (points on the unit sphere).
-"""
+r"""Prior-data Fitted Network prior mean (appendix E.4), backed by TabPFN. Replaces the classical
+GP's m(x)=0, which extrapolates badly away from boundary-concentrated data, with a global prior."""
 
 import numpy as np
 
@@ -70,27 +33,8 @@ class ConstantPFN:
 
 
 class TabPFNPrior:
-    r"""TabPFN as the E.4 prior mean.
-
-    ``TabPFNRegressor.fit(X_ctx, y_ctx)`` followed by ``.predict(X_query)`` IS
-    in-context regression, so TabPFN satisfies the prior interface directly. No
-    padding and no y-standardisation are applied here: TabPFN handles a variable
-    number of features natively (up to ~500) and normalises the target itself.
-
-    Fit caching is not an optimisation, it is a requirement. ``GeometryAware-
-    Surrogate.predict`` evaluates the prior mean on EVERY acquisition
-    evaluation, and the acquisition optimizer plus the finite-difference
-    gradients issue on the order of 10^3-10^4 evaluations per trial -- while the
-    context (the interventional data) changes only when ``set_data`` is called,
-    once per rebuild. The context is therefore hashed and the fitted regressor
-    reused until it actually changes, turning those 10^3-10^4 fits into one.
-    Even so this prior is far more expensive than the analytic baselines; budget
-    accordingly, and prefer ``device="cuda"`` where available.
-
-    Two degenerate contexts are handled before TabPFN is called at all, since it
-    is undefined on both: an empty context (no information -> 0) and a constant
-    context (no shape -> that constant).
-    """
+    r"""TabPFN as the E.4 prior mean: ``fit`` + ``predict`` IS in-context regression. Fit results
+    are cached and reused until the context changes, since acquisition issues ~10^3-10^4 evals."""
 
     name = "tabpfn"
     max_dim = None
@@ -164,12 +108,8 @@ class TabPFNPrior:
 
 
 def build_prior(spec, device: str = "cpu"):
-    """Resolve a prior from a name or an object.
-
-    "pfn" and "tabpfn" both mean TabPFN -- the PFN prior is TabPFN now, and the
-    former name is kept so existing configs keep working. Checkpoint paths are
-    no longer accepted: there is no local PFN left to load.
-    """
+    """Resolve a prior from a name or an object. "pfn" and "tabpfn" both mean TabPFN; checkpoint
+    paths are no longer accepted."""
     if spec is None or spec == "zero":
         return ZeroPFN()
     if spec == "constant":

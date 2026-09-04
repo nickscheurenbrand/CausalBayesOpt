@@ -1,32 +1,5 @@
-"""Ground-truth graph queries and true-response-surface search.
-
-Two things the boundary experiments need but the algorithm never sees, both
-computed from the TRUE graph/SEM rather than from any posterior or surrogate:
-
-1. Ancestry stratification (`classify_node`, `stratified_non_parents`).
-   "Non-parent" does not mean "no causal effect": a non-parent can still be an
-   ANCESTOR, whose effect on the target is real but MEDIATED through other
-   nodes. Only a non-ancestor satisfies P(Y | do(v)) = P(Y). Stratifying the
-   random arm this way separates "intervened on something causally irrelevant"
-   from "intervened on something causally relevant but indirect".
-
-2. The true optimum of E[Y | do(X_S = x)] over the intervention box
-   (`find_true_optimum`), and whether it is INTERIOR or on the BOUNDARY.
-   Without this, an intervention landing on the range edge is uninterpretable:
-   it may be the optimizer degenerating, or it may be the correct answer. For a
-   linear SEM E[Y | do(x)] is affine in x, so the optimum is always at a corner
-   and edge-seeking is CORRECT behaviour; with nonlinear mechanisms an interior
-   optimum can exist and edge-seeking is then a genuine failure. This function
-   tells the two cases apart per intervention set.
-
-E[Y | do(x)] is estimated by Monte Carlo over the true SEM's noise. All
-evaluations reuse the SAME noise draws (common random numbers, via
-`graph.set_seed(crn_seed)` before each call), so the estimated surface is a
-deterministic function of x and points are compared on equal footing. Note that
-`--noiseless` does NOT suppress SEM noise for these graph classes -- their
-`get_error_distribution` ignores the flag -- so the MC average is required, a
-single draw would not give E[Y | do(x)].
-"""
+"""Ground-truth graph queries and true-response-surface search, computed from the TRUE graph/SEM.
+Provides ancestry stratification and the true optimum of E[Y | do(x)], INTERIOR vs BOUNDARY."""
 
 from collections import deque
 from itertools import product
@@ -84,11 +57,8 @@ def ancestor_depths(graph) -> Dict[str, int]:
 
 
 def classify_nodes(graph) -> Tuple[Dict[str, str], Dict[str, float]]:
-    """(relation, directed distance to target) for every non-target node.
-
-    `relation` is one of RELATIONS; the distance is the number of directed hops
-    v -> target (inf when v is not an ancestor).
-    """
+    """(relation, directed distance to target) for every non-target node. `relation` is one of
+    RELATIONS; distance is directed hops v -> target (inf if not an ancestor)."""
     fwd, rev, und = _adjacencies(graph)
     target = str(graph.target)
     parents = {str(p) for p in graph.parents[graph.target]}
@@ -119,12 +89,8 @@ def classify_nodes(graph) -> Tuple[Dict[str, str], Dict[str, float]]:
 
 
 def stratified_pools(graph) -> Dict[str, List[str]]:
-    """Candidate pools for the random arm, keyed by stratum.
-
-    any          -- every non-parent, non-target node (the original behaviour)
-    ancestor     -- non-parent ANCESTORS: mediated, causally relevant
-    non_ancestor -- non-ancestors: the true causal null, P(Y | do(v)) = P(Y)
-    """
+    """Candidate pools for the random arm, keyed by stratum: "any" (non-parent, non-target),
+    "ancestor" (mediated, causally relevant), "non_ancestor" (true causal null)."""
     relation, _ = classify_nodes(graph)
     pools = {"any": [], "ancestor": [], "non_ancestor": []}
     for v, rel in relation.items():
@@ -147,11 +113,8 @@ def _sorted_nodes(nodes: Sequence[str]) -> List[str]:
 
 
 def stratified_non_parents(graph, k: int, seed: int, category: str = "any"):
-    """k distinct non-parents drawn from `category`, using `seed`.
-
-    Drop-in replacement for the original pick_random_non_parents: category
-    "any" reproduces it exactly (same pool, same rng, same ordering).
-    """
+    """k distinct non-parents drawn from `category`, using `seed`. Drop-in replacement for
+    pick_random_non_parents: category "any" reproduces it exactly."""
     if category not in ("any", "ancestor", "non_ancestor"):
         raise ValueError(f"unknown category {category!r}")
     pool = stratified_pools(graph)[category]
@@ -166,12 +129,8 @@ def stratified_non_parents(graph, k: int, seed: int, category: str = "any"):
 
 
 def linear_total_effects(graph) -> Optional[Dict[str, float]]:
-    """{v: total causal effect of v on the target}, or None if not linear.
-
-    For a linear SEM with weight matrix W[parent, child], the total effect is
-    (I - W)^-1 [v, target] -- the sum over directed paths of the products of
-    their edge weights, i.e. direct plus all MEDIATED contributions.
-    """
+    """{v: total causal effect of v on the target}, or None if not linear. Computed as
+    (I - W)^-1 [v, target]: the sum over paths of products of edge weights."""
     if getattr(graph, "nonlinear", False):
         return None
     W = getattr(graph, "weighted_adjacency_matrix", None)
@@ -193,19 +152,8 @@ def linear_total_effects(graph) -> Optional[Dict[str, float]]:
 
 
 def intervention_bounds(graph, variables: Sequence[str]) -> List[Tuple[float, float]]:
-    """The box the algorithm actually searches, per variable.
-
-    `interventional_range_data` is the per-variable [min, max] of the
-    OBSERVATIONAL data. It does not exist on a fresh graph -- it is created by
-    graph.set_interventional_range_data(D_O), which PARENT_SCALE.set_values
-    calls -- so this must run after set_values.
-
-    There is deliberately no fallback: GraphStructure.get_interventional_range
-    returns a flat [-5, 5] that no subclass overrides, which is NOT the box the
-    run searches, so silently using it would label an optimum "interior" or
-    "boundary" against the wrong bounds and make the result incomparable with
-    the run's own Boundary_Percentage.
-    """
+    """The box the algorithm actually searches, per variable. Reads
+    `graph.interventional_range_data`; deliberately no fallback to the unrelated [-5, 5] default."""
     ranges = getattr(graph, "interventional_range_data", None)
     if not ranges:
         raise RuntimeError(
@@ -221,12 +169,8 @@ def intervention_bounds(graph, variables: Sequence[str]) -> List[Tuple[float, fl
 
 
 class ExpectedYUnderDo:
-    """Monte-Carlo estimator of E[Y | do(X_S = x)] on the TRUE SEM.
-
-    Common random numbers: `graph.set_seed(crn_seed)` is called before every
-    evaluation, so all x share one noise sample and the surface is a
-    deterministic, comparable function of x. Results are cached.
-    """
+    """Monte-Carlo estimator of E[Y | do(X_S = x)] on the TRUE SEM. Uses common random numbers
+    (`graph.set_seed(crn_seed)` before every call) so the surface is deterministic; cached."""
 
     def __init__(self, graph, variables: Sequence[str], n_mc: int = 50,
                  noiseless: bool = True, crn_seed: int = 12345,
@@ -275,29 +219,8 @@ def find_true_optimum(
     noiseless: bool = True,
     crn_seed: int = 12345,
 ) -> dict:
-    """Locate the optimum of E[Y | do(X_S = x)] and say if it is on the boundary.
-
-    Search = all box corners (when 2^k fits in `corner_budget`) + the centre +
-    `n_random_starts` random points, then coordinate-descent sweeps over a
-    per-axis grid of `n_grid` points. Corners are enumerated explicitly because
-    an affine surface always optimises at one, and coordinate descent is exact
-    for a separable surface and a good refinement otherwise.
-
-    A coordinate counts as on-boundary under the SAME rule the experiment uses
-    for the interventions themselves: within eps_frac * (upper - lower) of
-    either end. Returned keys:
-
-      opt_x, opt_EY            argopt and its E[Y]
-      opt_pos                  per-coordinate position in [0, 1]
-      n_dims_on_boundary, k    how many coordinates sit on an end
-      boundary_fraction        n_dims_on_boundary / k -- directly comparable to
-                               the run's Boundary_Percentage
-      is_interior              True iff NO coordinate is on a boundary
-      is_full_boundary         True iff EVERY coordinate is on a boundary
-      worst_x, worst_EY        the opposite extreme, for effect-size context
-      EY_range                 |best - worst|: how much E[Y] moves over the box
-      direction, n_mc, n_evals, variables
-    """
+    """Locate the optimum of E[Y | do(X_S = x)] and say if it is on the boundary. Searches box
+    corners + centre + random starts, then coordinate-descent refinement on a per-axis grid."""
     if direction not in ("min", "max"):
         raise ValueError("direction must be 'min' or 'max'")
     variables = [str(v) for v in variables]

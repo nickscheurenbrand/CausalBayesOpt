@@ -1,25 +1,5 @@
-"""
-Boundary tracking under a LATENT (hidden) confounder, for Erdos (linear) and
-DREAM (nonlinear) graphs.
-
-A hidden common cause Z is injected on (X, target): Z->X, Z->Y. Z is present in
-the data-generating SEM (so it correlates X and Y in the observational data) but
-is stripped from the observed data and never given to the algorithm. The model
-runs on the ORIGINAL base graph (no Z); under do(X) the backdoor is cut so the
-true interventional effect is flat -- the base SEM already yields correct
-interventional outcomes, so no PARENT_SCALE surgery is needed.
-
-Two configurations (--x_kind):
-  non_parent   -> X is a manipulable non-parent of the target (false positive:
-                  does the algorithm chase a non-causal variable's boundary?)
-  true_parent  -> X is a true parent of the target (effect corruption: does the
-                  confounding flip/bias a real parent's do-effect?)
-
-X is seeded into the candidate posterior at small mass (like the seeded
-experiment) so its boundary behaviour is observable. Saves the boundary pickle
-schema plus graph structure + confounder metadata under
-results/boundary_tracking_confounded/{graph_type}_{x_kind}/.
-"""
+"""Boundary tracking under a LATENT confounder Z (Z->X, Z->Y) hidden from the algorithm, for Erdos/DREAM graphs.
+--x_kind picks non_parent (false-positive check) or true_parent (effect-corruption check); saves under results/boundary_tracking_confounded/{graph_type}_{x_kind}/."""
 
 import argparse
 import logging
@@ -105,16 +85,13 @@ def parse_args():
     p.add_argument("--w_zy", type=float, default=2.0)
     p.add_argument("--sigma_z", type=float, default=1.0)
     p.add_argument("--seed_x", action="store_true", default=True,
-                   help="seed X into the candidate posterior at small mass")
+                   help="seed X at small mass")
     p.add_argument("--force_x", action="store_true",
-                   help="oracle-force X as the sole candidate so it is intervened every "
-                        "trial (guarantees observability; needed for DREAM where the "
-                        "nonlinear collapse prunes a merely-seeded X)")
+                   help="oracle-force X as sole candidate")
     p.add_argument("--no_confounder", action="store_true",
-                   help="control run: clean observational data (no hidden Z) but same X, "
-                        "to isolate the confounding effect on X's boundary behaviour")
+                   help="control run: no hidden Z")
     p.add_argument("--tag", type=str, default="",
-                   help="suffix for the results subdir, e.g. conf / ctrl")
+                   help="results subdir suffix")
     p.add_argument("--inject_prob", type=float, default=0.1)
     p.add_argument("--seeds_replicate", type=int, default=71)
     p.add_argument("--n_observational", type=int, default=200)

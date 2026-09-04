@@ -1,23 +1,5 @@
-"""
-Boundary-tracking experiment on the GWPS gene network (linear-G_hat SEM), the
-GWPS analogue of the Erdos/DREAM boundary scripts.
-
-Builds a GwpsGraph (DAG subgraph of the real Perturb-seq network, linear-Gaussian
-SEM using the real G_hat weights scaled by --weight_scale), runs CBO-U
-(PARENT_SCALE, dr2) while tracking the intervention boundary percentage and the
-parent posterior, and saves the same schema as the Erdos/DREAM boundary scripts
-so results_erdos/boundary_bias_analysis.py works unchanged.
-
---oracle forces the true parent set (probability 1.0), bypassing the bootstrap
-(the confound-closing variant). GWPS is LINEAR, so PARENT_SCALE runs with
-nonlinear=False and the boundary hypothesis (monotone effect -> edge optimum)
-applies as for Erdos.
-
-Output:
-  results/boundary_tracking_gwps/{tag}/...            (baseline)
-  results/boundary_tracking_gwps_oracle/{tag}/...     (--oracle)
-  tag = gwps_n{max_nodes}_ws{weight_scale}
-"""
+"""Boundary-tracking on the GWPS gene network (linear-G_hat SEM), the GWPS analogue of the Erdos/DREAM boundary scripts;
+--oracle forces the true parent set (prob 1.0). Output: results/boundary_tracking_gwps[_oracle]/gwps_n{max_nodes}_ws{weight_scale}/."""
 
 import argparse
 import logging
@@ -70,11 +52,9 @@ def parse_args():
     p.add_argument("--weight_scale", type=float, default=3.0)
     p.add_argument("--noise_sigma", type=float, default=1.0)
     p.add_argument("--n_non_ancestors", type=int, default=0,
-                   help="reserve this many of --max_nodes for genes that are NOT "
-                        "ancestors of the target; must match the random arm so "
-                        "both run on the same graph (0 = original carve)")
-    p.add_argument("--target", type=str, default=None, help="target ENSG (auto if omitted)")
-    p.add_argument("--oracle", action="store_true", help="force the true parent set (prob 1.0)")
+                   help="Non-ancestor genes to reserve")
+    p.add_argument("--target", type=str, default=None, help="Target ENSG id")
+    p.add_argument("--oracle", action="store_true", help="Force true parent set")
     p.add_argument("--seeds_replicate", type=int, default=71)
     p.add_argument("--n_observational", type=int, default=200)
     p.add_argument("--n_trials", type=int, default=30)

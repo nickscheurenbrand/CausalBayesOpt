@@ -1,33 +1,5 @@
-"""
-Seed-and-track experiment: if the true parents ARE among the initial candidates,
-does the 30-trial CBO update ever learn them, or does the delete-only /
-winner-take-all posterior prune them first?
-
-Unlike the oracle (which forces the true parents at probability 1.0), this runs
-the REAL doubly-robust bootstrap and then *mixes in* the true-parent hypotheses
--- the exact set and each singleton -- at a small prior mass, alongside the
-bootstrap's (realistic, often wrong) candidates. Everything downstream is the
-normal pipeline: the initial interventional Bayesian update, the error-tol
-pruning, and the 30-trial acquisition/update loop. We then track, per iteration,
-the posterior mass on the true parents.
-
-Injection point is determine_initial_probabilities (the single place the
-candidate posterior is created); we wrap it, call the original bootstrap, add
-the true-parent hypotheses, and renormalise. The injected mass is small but
-above the pruning threshold, so survival is NOT guaranteed -- that is exactly
-what the experiment measures.
-
-Reading the result (printed trajectory + saved pickle):
-  - P(true exact) or P(any true-parent hypothesis) CLIMBS over trials
-        => the update dynamics can recover the parents given inclusion; the whole
-           problem is the cold start.
-  - it stays flat / is pruned to 0, and no interventions land on true parents
-        => learning fails even with inclusion; the fix must change the
-           update/pruning dynamics, not just the cold start.
-
-Output pickle (results/boundary_tracking_seeded/{graph_type}/) matches the
-boundary-tracking format plus injection metadata.
-"""
+"""Seed-and-track experiment: mixes true-parent hypotheses into the real doubly-robust bootstrap posterior at small prior
+mass, then checks whether the 30-trial CBO update learns/retains or prunes them. Output: results/boundary_tracking_seeded/{graph_type}/."""
 
 import logging
 import os
@@ -89,8 +61,7 @@ def parse_args():
         "--inject_prob",
         type=float,
         default=0.1,
-        help="prior mass added to each injected true-parent hypothesis (the exact "
-        "set and each singleton) before renormalising with the bootstrap output",
+        help="prior mass added per injected hypothesis",
     )
     return p.parse_args()
 

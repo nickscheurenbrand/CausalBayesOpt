@@ -79,20 +79,8 @@ def generate_multivariate_time_series(
     connectivity_matrix,
     noise_stddev=1,
 ):
-    """
-    Generates a multivariate time series dataset based on the given parameters.
-
-    Parameters:
-    n_data_points (int): Number of data points (time steps) in the time series.
-    n_variables (int): Number of variables in the multivariate time series.
-    lag (int): Number of previous time steps that every variable's parents can belong to.
-    fixed_functions (list): List of MLPs, one for each variable.
-    connectivity_matrix (np.array): Binary connectivity matrix (lag x n_variables x n_variables) representing the causal structure.
-    noise_stddev (float): Standard deviation of the Gaussian noise. Default is 1.
-
-    Returns:
-    torch.Tensor: A PyTorch tensor (n_data_points x n_variables) containing the generated multivariate time series data.
-    """
+    """Generate an (n_data_points x n_variables) time series whose lagged causal
+    structure follows `connectivity_matrix`, driving each step through its MLP."""
 
     SCALE = 10
     # Initialize the multivariate time series data
@@ -118,18 +106,8 @@ def generate_multivariate_time_series(
 
 
 def generate_target_time_series(time_series_data, adjacency_matrix, transform, nsr=0):
-    """
-    Generates a target time series of a single variable based on the input time series and a binary adjacency matrix.
-
-    Parameters:
-    time_series_data (torch.Tensor): Input time series data (n_data_points x n_variables).
-    adjacency_matrix (np.array): Binary adjacency matrix (lag x n_variables) representing the parents of the target variable.
-    transform:  Fct that takes as input a 2d torch array and produces as output a 2d torch array with last dim=1 and same outer dim
-    nsr (float): Noise to Signal ration. Default is 0.
-
-    Returns:
-    torch.Tensor: A PyTorch tensor (n_data_points x 1) containing the generated target time series data.
-    """
+    """Build a target series from time_series_data's parents (per adjacency_matrix)
+    via `transform`, adding noise scaled by nsr relative to the target's std."""
 
     n_data_points, n_variables = time_series_data.shape
     lag = adjacency_matrix.shape[0]

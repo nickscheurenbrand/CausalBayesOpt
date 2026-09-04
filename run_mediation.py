@@ -1,55 +1,6 @@
 #!/usr/bin/env python3
-"""Local runner for the MEDIATION boundary-tracking jobs.
-
-The third arm alongside run_oracle.py (true parents) and run_random.py (random
-non-parents). Those two cannot answer "does a MEDIATED effect still drive the
-boundary behaviour?", because "non-parent" does not mean "no causal effect": a
-non-parent can be an ancestor whose effect on the target is real but routed
-through other nodes. Only a non-ancestor is a true causal null.
-
-Three cardinality-matched arms are defined, differing only in where in the graph
-the intervened nodes sit:
-
-    parents       true parent set              direct effect       (oracle script)
-    ancestor      non-parent ANCESTORS         mediated effect     (random script)
-    non_ancestor  non-ancestors                no effect at all    (random script)
-
-Each job declares which of them it runs by DEFAULT (see --list); the others are
-still built, so --arms can pull them in without editing this file. As configured
-the erdos and gwps jobs run "ancestor" only and the dream jobs "non_ancestor"
-only -- 25 runs, matching the directories job_mediation.sh creates. Note that a
-single arm per graph gives no within-graph contrast: comparing mediated against
-null then means comparing erdos/gwps against dream, which is confounded with the
-graph family. Add the missing arms with --arms when you want that contrast.
-
-Graph configuration matters, because the default setups cannot host all three:
-
-  * Erdos100's default target ("80") sits in a 5-node component with only one
-    mediated ancestor, and the DREAM targets (max in-degree) have an ancestor
-    set equal to their parent set, so their mediated pool is empty. Both are
-    fixed by re-targeting -- no topology change -- at the cost of a smaller k.
-  * The GWPS carve IS the target's ancestor closure, so it holds essentially no
-    non-ancestors. Fixed with --n_non_ancestors, which reserves part of the node
-    budget for genes provably outside the target's ancestor set. Raising
-    --max_nodes to 80 keeps the full mediated pool AND k=8.
-
-Every arm of a job must share the graph configuration or the comparison is void,
-so the target / carve flags are defined once per job and applied to all arms.
-
-Results land in
-    results/boundary_tracking_{erdos,dream,gwps}_random_{ancestor,non_ancestor}/
-    results/boundary_tracking{,_dream,_gwps}_oracle/
-under a tag that encodes the non-default target or carve, so nothing already
-run is overwritten.
-
-Usage:
-    python run_mediation.py --all                 # 25 runs, default arms
-    python run_mediation.py erdos50 gwps
-    python run_mediation.py --list                # jobs, arms and step counts
-    python run_mediation.py --all --dry-run
-    python run_mediation.py gwps --arms ancestor,non_ancestor,parents
-    python run_mediation.py erdos50 --no-log
-"""
+"""Local runner for the MEDIATION boundary-tracking jobs: cardinality-matched parents/ancestor/non_ancestor arms isolating direct vs. mediated vs. null causal effect.
+Run with --list to see jobs/arms/step counts, or --help for all flags."""
 
 import argparse
 import os
@@ -199,11 +150,8 @@ def jobs_for_datasets(datasets):
 
 
 def filter_arms(job, arms=None):
-    """Keep only the steps for `arms`, defaulting to the job's own arms.
-
-    Each job declares the arms it runs by default -- the other arms are still
-    built, so --arms can pull them in without editing this file.
-    """
+    """Keep only the steps for `arms` (defaults to the job's own arms; the
+    other arms are still built, so --arms can pull them in without edits)."""
     wanted = arms or job["default_arms"]
     keep = [s for s in job["steps"] if s[2].split()[1] in wanted]
     return {**job, "steps": keep, "selected_arms": tuple(wanted)}
@@ -258,20 +206,18 @@ def run_job(name, job, dry_run=False, no_log=False):
 def main():
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("jobs", nargs="*", help="Job names to run (see --list).")
-    parser.add_argument("--all", action="store_true", help="Run every job.")
+    parser.add_argument("jobs", nargs="*", help="Job names (see --list)")
+    parser.add_argument("--all", action="store_true")
     parser.add_argument("--dataset", type=str, default=None,
-                        help="comma-separated dataset(s) to run: %s "
-                             "(selects every job of that family)"
+                        help="Comma-separated dataset(s) to run: %s"
                              % ",".join(sorted(DATASET_ALIASES)))
     parser.add_argument("--print-dirs", action="store_true",
-                        help="print the results dirs for the selection and exit "
-                             "(so a job script can mkdir exactly what it needs)")
-    parser.add_argument("--list", action="store_true", help="List job names.")
+                        help="Print results dirs and exit")
+    parser.add_argument("--list", action="store_true")
     parser.add_argument("--arms", type=str, default=None,
-                        help="comma-separated subset of %s" % ",".join(ARMS))
-    parser.add_argument("--dry-run", action="store_true", help="Print commands only.")
-    parser.add_argument("--no-log", action="store_true", help="Stream to stdout.")
+                        help="Comma-separated subset of %s" % ",".join(ARMS))
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--no-log", action="store_true", help="Stream to stdout")
     args = parser.parse_args()
 
     if args.list:

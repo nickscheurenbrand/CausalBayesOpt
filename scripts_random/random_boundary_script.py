@@ -1,44 +1,5 @@
-"""
-Boundary tracking when intervening on RANDOM NON-PARENT nodes.
-
-The counterfactual to the oracle: instead of forcing the true parent set, force a
-randomly drawn set of NON-parents of the same cardinality, and intervene on them
-jointly. Everything else (acquisition, GP surrogate, boundary tracking, joint
-intervention) is identical to the oracle, so any difference is attributable to
-*which* nodes are intervened on.
-
-Why this is informative: PARENT_SCALE builds each candidate graph via
-mispecify_graph([(x, target) for x in chosen_set]), which discards all other
-edges -- so the surrogate's do-effect is essentially the OBSERVATIONAL regression
-of Y on the chosen set, while realised outcomes come from the TRUE SEM. A random
-non-parent set therefore tests whether boundary-seeking tracks observational
-association rather than causal effect. The saved metadata includes each chosen
-node's observational correlation with the target so this can be checked directly.
-
-The random set is drawn with the replicate seed, so each seed gives a DIFFERENT
-set -- the 5 replicates provide set-to-set variability, not just data noise.
-
---node_category stratifies the draw by ANCESTRY, because "non-parent" does not
-mean "no causal effect": a non-parent can still be an ancestor whose effect on
-the target is real but MEDIATED through other nodes. Only a non-ancestor is a
-true causal null (P(Y | do(v)) = P(Y)). "any" reproduces the original unstratified
-behaviour; "ancestor" isolates mediated-but-relevant nodes; "non_ancestor"
-isolates the genuine null. Every run also saves the relation and directed
-distance-to-target of each chosen node, plus the pool sizes, so runs drawn with
-"any" can be stratified after the fact.
-
-Each run additionally locates the TRUE optimum of E[Y | do(X_S = x)] over the
-intervention box on the ground-truth SEM and records whether it is interior or
-on the boundary (--no_true_optimum to skip). This is what makes a boundary
-intervention interpretable: if the true optimum is itself on the boundary, going
-to the edge is CORRECT, not a failure. For a linear SEM E[Y | do(x)] is affine,
-so its optimum is always at a corner; interior optima can only arise from
-nonlinear mechanisms.
-
-Output:
-  results/boundary_tracking_{erdos|dream|gwps}_random{kernel_suffix}/{tag}/
-      run{run_num}_cbo_unknown_dr2_boundary_{ACQ}_{n_obs}_{n_int}[_nonlinear].pickle
-"""
+"""Boundary tracking when intervening on RANDOM NON-PARENT nodes (drawn with the replicate seed, optionally stratified by
+--node_category ancestry), testing whether boundary-seeking tracks association rather than causal effect."""
 
 import argparse
 import logging
@@ -130,12 +91,8 @@ def build_graph(args):
 
 def pick_random_non_parents(graph: GraphStructure, k: int, seed: int,
                             category: str = "any"):
-    """k distinct non-parent, non-target nodes from `category`, drawn with `seed`.
-
-    category "any" is the original unstratified pool; "ancestor" restricts to
-    non-parent ANCESTORS (mediated causal effect on the target) and
-    "non_ancestor" to non-ancestors (no causal effect at all).
-    """
+    """k distinct non-parent, non-target nodes from `category` ("any",
+    "ancestor", or "non_ancestor"), drawn with `seed`."""
     return stratified_non_parents(graph, k, seed, category=category)
 
 
@@ -155,7 +112,7 @@ def compute_p_true_parents(posterior_history, true_parents):
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--graph_type", type=str, default="Erdos50",
-                   help="Erdos20/50/100, Size50-Ecoli1, Size100-Ecoli1, or gwps")
+                   help="Erdos, DREAM size, or gwps")
     p.add_argument("--seeds_replicate", type=int, default=71)
     p.add_argument("--n_observational", type=int, default=200)
     p.add_argument("--n_trials", type=int, default=30)
@@ -168,34 +125,27 @@ def parse_args():
     # ancestry stratification of the random pool
     p.add_argument("--node_category", type=str, default="any",
                    choices=["any", "ancestor", "non_ancestor"],
-                   help="draw from all non-parents (any), non-parent ANCESTORS "
-                        "(mediated effect), or non-ancestors (true causal null)")
+                   help="ancestry stratum of the random pool")
     p.add_argument("--category_subdir", action="store_true",
-                   help="append the category to the results subdir, so stratified "
-                        "arms do not overwrite the unstratified ones")
+                   help="append category to results subdir")
     # ground-truth optimum of E[Y | do(set)]
-    p.add_argument("--no_true_optimum", action="store_true",
-                   help="skip the ground-truth optimum search")
+    p.add_argument("--no_true_optimum", action="store_true")
     p.add_argument("--opt_direction", type=str, default="min",
                    choices=["min", "max"],
-                   help="CBO minimises the target, so 'min' matches the runs")
+                   help="should match CBO's direction")
     p.add_argument("--opt_n_mc", type=int, default=50,
-                   help="MC samples per E[Y | do(x)] evaluation")
+                   help="MC samples per evaluation")
     p.add_argument("--opt_grid", type=int, default=21,
-                   help="grid points per axis in the coordinate-descent sweeps")
+                   help="grid points per axis")
     # gwps-only knobs (ignored otherwise)
     p.add_argument("--target", type=str, default=None,
-                   help="override the default target (any family). The built-in "
-                        "targets were chosen before ancestry mattered; some "
-                        "cannot host both stratified arms")
+                   help="override the default target node")
     p.add_argument("--max_nodes", type=int, default=60)
     p.add_argument("--top_k_parents", type=int, default=8)
     p.add_argument("--weight_scale", type=float, default=3.0)
     p.add_argument("--noise_sigma", type=float, default=1.0)
     p.add_argument("--n_non_ancestors", type=int, default=0,
-                   help="gwps only: reserve this many of --max_nodes for genes "
-                        "that are NOT ancestors of the target, so the graph can "
-                        "host a causally-null arm (0 = original carve)")
+                   help="gwps only: non-ancestor node count")
     return p.parse_args()
 
 

@@ -1,28 +1,5 @@
-"""
-Latent (hidden) confounder injection for the boundary experiments.
-
-A confounder Z of a manipulable variable X and the target Y is a common cause
-(Z->X, Z->Y). We make Z *latent*: it is present in the data-generating SEM (so it
-correlates X and Y in the OBSERVATIONAL data) but is stripped from the observed
-data and never given to the algorithm. Because neither the doubly-robust
-parent-ID nor the do-effect estimation deconfounds, a hidden Z fools the method:
-X shows a spurious X-Y association and can be mis-identified as a parent.
-
-Key trick (no core-algorithm surgery): under do(X) the Z->X backdoor is cut, so
-the *true* interventional effect of a non-parent X is flat. The confounding
-therefore only needs to live in the observational data. We generate confounded
-D_O from a SEM with Z, strip Z, and run PARENT_SCALE on the ORIGINAL base graph
-(no Z) -- whose SEM already yields the correct interventional outcomes.
-
-Injection is done at the SEM-function level: add a latent root Z ~ N(0, sigma_z)
-and add w*Z to X's and Y's structural functions. This is graph-agnostic --
-identical for the linear Erdos SEM and the NumPy nonlinear DREAM SEM.
-
-Public API:
-    pick_confounded_x(base_graph, x_kind)          -> chosen X (str)
-    inject_latent_confounders(base_graph, confs)   -> ConfoundedSampler, meta
-    generate_confounded_observational_data(...)     -> D_O (Z stripped)
-"""
+"""Latent (hidden) confounder injection for the boundary experiments: Z is a common
+cause of X and Y, stripped from D_O so PARENT_SCALE runs unmodified on the base graph."""
 
 import logging
 from collections import OrderedDict, defaultdict
@@ -48,17 +25,8 @@ def _descendants(graph, node):
 
 
 def pick_confounded_x(base_graph, x_kind: str) -> str:
-    """
-    Deterministically choose the observed variable X the hidden confounder
-    attaches to.
-
-    x_kind == "non_parent": a manipulable variable that is NOT a parent of the
-        target and ideally neither an ancestor nor a descendant of it (a
-        "spectator"), so the ONLY X-Y association is the injected Z. Tests the
-        false-positive case.
-    x_kind == "true_parent": one of the target's true parents. Tests the
-        effect-corruption case.
-    """
+    """Deterministically choose the observed variable X the confounder attaches to:
+    "non_parent" picks a spectator, "true_parent" picks one of the target's true parents."""
     target = base_graph.target
     manipulable = [v for v in base_graph.variables if v != target]
     parents = set(base_graph.parents[target])
@@ -84,11 +52,7 @@ def pick_confounded_x(base_graph, x_kind: str) -> str:
 
 
 class ConfoundedSampler:
-    """
-    Minimal object exposing exactly what sample_model needs (`.SEM` and
-    `.get_error_distribution`) to draw observational data from the confounded
-    SEM. Not a full GraphStructure -- it only generates D_O.
-    """
+    """Minimal `.SEM`/`.get_error_distribution` object for sample_model; not a full GraphStructure."""
 
     def __init__(self, base_graph, confounded_sem, latent, seed=None):
         self._base = base_graph
@@ -111,11 +75,8 @@ def _wrap_add_terms(base_fn, terms):
 
 
 def inject_latent_confounders(base_graph, confounders, seed=None):
-    """
-    confounders: list of dicts/tuples (x, w_zx, w_zy, sigma_z).
-    Returns (sampler, meta) where sampler draws confounded observational data
-    and meta records the confounder configuration for saving/analysis.
-    """
+    """Wrap base_graph's SEM with latent confounder terms from `confounders`.
+    Returns (sampler, meta): sampler draws confounded D_O, meta logs the config."""
     target = base_graph.target
 
     add_terms = defaultdict(list)  # observed node -> [(z_name, weight)]

@@ -1,10 +1,5 @@
-"""E.7: drive the EXISTING acquisition code against the new surrogate.
-
-GPy is not installed locally and utils/cbo_classes.py imports it at module
-level, so stub only the GPy symbols cbo_classes touches. Everything actually
-under test (CausalExpectedImprovement, the gradient optimizer, the surrogate)
-is the real code.
-"""
+"""E.7: drive the EXISTING acquisition code (CausalExpectedImprovement, the gradient optimizer, the
+surrogate) against the new surrogate, stubbing only the GPy symbols cbo_classes needs to import."""
 import os, sys
 import numpy as np
 

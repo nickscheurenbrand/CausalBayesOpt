@@ -43,122 +43,115 @@ def parse_args():
     parser.add_argument("--n_trials", type=int)
     parser.add_argument("--n_anchor_points", type=int)
     parser.add_argument("--run_num", type=int)
-    parser.add_argument("--noiseless", action="store_true", help="Run without noise")
-    parser.add_argument(
-        "--nonlinear", action="store_true", help="Use the nonlinear graphs"
-    )
+    parser.add_argument("--noiseless", action="store_true")
+    parser.add_argument("--nonlinear", action="store_true")
 
-    parser.add_argument(
-        "--save_path", type=str, default="results/", help="Path to save result files"
-    )
-    parser.add_argument("--id", type=str, default=None, help="ID for the run")
+    parser.add_argument("--save_path", type=str, default="results/")
+    parser.add_argument("--id", type=str, default=None)
     parser.add_argument(
         "--data_seed",
         type=int,
         default=20,
-        help="random seed for generating data (default: 20)",
     )
     parser.add_argument(
         "--seed",
         type=int,
         default=42,
-        help="random seed (default: 42)",
     )
     parser.add_argument(
-        "--num_nodes", type=int, default=5, help="Number of nodes in the causal model"
+        "--num_nodes", type=int, default=5, help="Number of nodes"
     )
     parser.add_argument(
         "--model",
         type=str,
         default="dag_bootstrap",
-        help="Posterior model to use {dag_bootstrap}",
+        help="Posterior model {dag_bootstrap}",
     )
     parser.add_argument("--env", type=str, default="erdos", help="SCM to use")
     parser.add_argument(
         "--strategy",
         type=str,
         default="random",
-        help="Acqusition strategy to use {abcd, random}",
+        help="Acquisition strategy {abcd, random}",
     )
-    parser.add_argument("--num_batches", type=int, default=10, help="Number of batches")
-    parser.add_argument("--batch_size", type=int, default=2, help="Batch size")
+    parser.add_argument("--num_batches", type=int, default=10)
+    parser.add_argument("--batch_size", type=int, default=2)
     parser.add_argument(
         "--sparsity_factor",
         type=float,
         default=0.0,
-        help="Hyperparameter for sparsity regulariser",
+        help="Sparsity regularizer weight",
     )
     parser.add_argument(
         "--exp_edges",
         type=float,
         default=0.1,
-        help="probability of expected edges in random graphs",
+        help="Expected edge probability",
     )
     parser.add_argument(
         "--num_samples",
         type=int,
         default=100,
-        help="Total number of samples in the synthetic data",
+        help="Number of synthetic samples",
     )
     parser.add_argument(
         "--num_targets",
         type=int,
         default=1,
-        help="Total number of targets.",
     )
     parser.add_argument(
         "--num_particles",
         type=int,
         default=30,
-        help="Total number of posterior samples",
+        help="Number of posterior samples",
     )
     parser.add_argument(
         "--num_starting_samples",
         type=int,
         default=100,
-        help="Total number of samples in the synthetic data to start with",
+        help="Initial number of samples",
     )
     parser.add_argument(
         "--temperature_type",
         type=str,
         default="anneal",
-        help="Whether to anneal the relaxed distribution temperature or keep it fixed",
+        help="Anneal relaxed-distribution temperature",
     )
     parser.add_argument(
         "--exploration_steps",
         type=int,
         default=1,
-        help="Total number of exploration steps in gp-ucb",
+        help="Exploration steps in GP-UCB",
     )
     parser.add_argument(
         "--noise_type",
         type=str,
         default="isotropic-gaussian",
-        help="Type of noise of causal model",
+        help="Noise type",
     )
     parser.add_argument(
         "--temperature",
         type=float,
         default=1.0,
-        help="Temperature of soft bald/ reparameterized sampling",
+        help="Sampling temperature",
     )
     parser.add_argument(
-        "--noise_sigma", type=float, default=0.1, help="Std of Noise Variables"
+        "--noise_sigma", type=float, default=0.1
     )
     parser.add_argument(
         "--scm_bias",
         type=float,
         default=0.0,
-        help="Bias term of the additive gaussian noise.",
+        help="Additive noise bias",
     )
     parser.add_argument(
-        "--theta_mu", type=float, default=2.0, help="Mean of Parameter Variables"
+        "--theta_mu", type=float, default=2.0
     )
     parser.add_argument(
-        "--theta_sigma", type=float, default=1.0, help="Std of Parameter Variables"
+        "--theta_sigma", type=float, default=1.0
     )
     parser.add_argument(
-        "--gibbs_temp", type=float, default=1000.0, help="Temperature of Gibbs factor"
+        "--gibbs_temp", type=float, default=1000.0
     )
 
     # TODO: improve names
@@ -166,19 +159,18 @@ def parse_args():
         "--num_intervention_values",
         type=int,
         default=10,
-        help="Number of interventional values to consider.",
     )
     parser.add_argument(
         "--intervention_values",
         type=float,
         nargs="+",
-        help="Interventioanl values to set in `grid` value_strategy, else ignored.",
+        help="Values for `grid` strategy",
     )
     parser.add_argument(
         "--intervention_value",
         type=float,
         default=0.0,
-        help="Interventional value to set in `fixed` value_strategy, else ingored.",
+        help="Value for `fixed` strategy",
     )
 
     parser.add_argument(
@@ -205,19 +197,17 @@ def parse_args():
         "--value_strategy",
         type=str,
         default="fixed",
-        help="Possible strategies: gp-ucb, grid, fixed, sample-dist",
+        help="Strategy {gp-ucb, grid, fixed, sample-dist}",
     )
     parser.add_argument(
         "--dream4_path",
         type=str,
         default="envs/dream4/configurations/",
-        help="Path of DREAM4 files.",
     )
     parser.add_argument(
         "--dream4_name",
         type=str,
         default="insilico_size10_1",
-        help="Name of DREAM4 experiment to load.",
     )
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--deterministic", action="store_true")
@@ -228,17 +218,17 @@ def parse_args():
         "--opt_lr",
         type=float,
         default=0.5,
-        help="Learning rate of the gradient based optimizer.",
+        help="Optimizer learning rate",
     )
     parser.add_argument(
         "--opt_epochs",
         type=int,
         default=100,
-        help="Epochs for the gradient based optimizers",
+        help="Optimizer epochs",
     )
 
     parser.add_argument(
-        "--node_range", default="-10:10", help="Node value ranges (constraints)"
+        "--node_range", default="-10:10", help="Node value range"
     )
 
     parser.set_defaults(nonlinear=False)

@@ -1,30 +1,6 @@
 #!/usr/bin/env python3
-"""Local runner for the standard-RBF ORACLE boundary-tracking jobs.
-
-The plain-kernel counterpart of run_oracle_spherical.py: same oracle
-boundary-tracking runs, but with the regular RBF surrogate kernel
-(--kernel rbf) instead of the spherical variants.
-
-    ecoli -> scripts_dream/oracle_boundary_tracking_dream_script.py
-    erdos -> scripts_erdos/oracle_boundary_tracking_script.py
-    gwps  -> scripts_gwps/gwps_boundary_script.py --oracle
-
-Each job runs its oracle boundary-tracking command(s) then the boundary-bias
-analysis, teeing all output to a log file under the job's results directory.
-Because KERNEL_SUFFIX["rbf"] == "", results land in the base oracle folders
-(results/boundary_tracking_oracle, ..._dream_oracle, ..._gwps_oracle).
-
-Every job is repeated over 5 replicate seeds (71..75). The seed is encoded in
-the pickle name as the run number, so each dataset/graph yields run1..run5.
-
-Usage:
-    python run_oracle.py --all               # run every job
-    python run_oracle.py erdos               # run one or more jobs
-    python run_oracle.py erdos ecoli
-    python run_oracle.py --list              # list job names
-    python run_oracle.py --all --dry-run     # print commands only
-    python run_oracle.py erdos --no-log      # stream to terminal
-"""
+"""Local runner for the standard-RBF ORACLE boundary-tracking jobs (dream/erdos/gwps), 5 replicate seeds each.
+Plain-kernel counterpart of run_oracle_spherical.py. Use --list for job names, --help for all flags."""
 
 import argparse
 import os
@@ -188,13 +164,12 @@ def main():
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("jobs", nargs="*",
-                        help="Job names to run (see --list).")
-    parser.add_argument("--all", action="store_true", help="Run every job.")
-    parser.add_argument("--list", action="store_true", help="List job names and exit.")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Print commands without running.")
+                        help="Job names (see --list)")
+    parser.add_argument("--all", action="store_true")
+    parser.add_argument("--list", action="store_true")
+    parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--no-log", action="store_true",
-                        help="Stream to stdout instead of the log file.")
+                        help="Stream to stdout")
     args = parser.parse_args()
 
     if args.list:

@@ -1,27 +1,6 @@
 #!/usr/bin/env python3
-"""Local runner for the RANDOM NON-PARENT boundary-tracking jobs.
-
-The counterfactual to run_oracle.py: identical protocol, but each run forces a
-randomly drawn set of NON-parents (same cardinality as the true parent set)
-instead of the true parents, intervened on jointly.
-
-    ecoli -> Size50-Ecoli1, Size100-Ecoli1
-    erdos -> Erdos50, Erdos100
-    gwps  -> gwps_n60_ws3
-
-Each job is repeated over 5 replicate seeds (71..75); the seed both draws the
-random set and is encoded in the pickle name as the run number, so every
-dataset/graph yields run1..run5 with five DIFFERENT random sets.
-
-Results land in results/boundary_tracking_{erdos,dream,gwps}_random/.
-
-Usage:
-    python run_random.py --all
-    python run_random.py erdos
-    python run_random.py --list
-    python run_random.py --all --dry-run
-    python run_random.py erdos --no-log
-"""
+"""Local runner for the RANDOM NON-PARENT boundary-tracking jobs: run_oracle.py's counterfactual, forcing a
+random non-parent set (same cardinality as the true parents) instead, over 5 replicate seeds. Use --list/--help."""
 
 import argparse
 import os
@@ -119,11 +98,11 @@ def run_job(name, job, dry_run=False, no_log=False):
 def main():
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("jobs", nargs="*", help="Job names to run (see --list).")
-    parser.add_argument("--all", action="store_true", help="Run every job.")
-    parser.add_argument("--list", action="store_true", help="List job names and exit.")
-    parser.add_argument("--dry-run", action="store_true", help="Print commands only.")
-    parser.add_argument("--no-log", action="store_true", help="Stream to stdout.")
+    parser.add_argument("jobs", nargs="*", help="Job names (see --list)")
+    parser.add_argument("--all", action="store_true")
+    parser.add_argument("--list", action="store_true")
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--no-log", action="store_true", help="Stream to stdout")
     args = parser.parse_args()
 
     if args.list:

@@ -1,8 +1,5 @@
-"""Smoke test for utils/ground_truth.py against a hand-built graph.
-
-GPy is not installed locally and utils/sem_sampling.py imports it at module
-level, so stub out that import chain before importing anything real.
-"""
+"""Smoke test for utils/ground_truth.py against a hand-built graph. Stubs GPy (not installed
+locally) before importing, since utils/sem_sampling.py needs it."""
 import sys, types, os
 from collections import OrderedDict
 

@@ -1,13 +1,5 @@
-"""
-ORACLE boundary-tracking on the DREAM (dream4) gene networks -- the DREAM analogue
-of scripts_erdos/oracle_boundary_tracking_script.py.
-
-Same as boundary_tracking_dream_script.py, but forces the parent posterior to the
-TRUE parent set (probability 1.0), bypassing the doubly-robust bootstrap, so the
-graph intervenes on its real parents. Everything else (acquisition, GP surrogates,
-boundary tracking) is identical. Output pickle format matches the baseline, saved
-under results/boundary_tracking_dream_oracle/{graph_type}/.
-"""
+"""ORACLE boundary-tracking on DREAM gene networks: same as boundary_tracking_dream_script.py but forces the parent
+posterior to the TRUE parent set (prob 1.0). Output saved under results/boundary_tracking_dream_oracle/{graph_type}/."""
 
 import argparse
 import logging

@@ -1,11 +1,5 @@
-"""Import shim so the appendix-E tests run with or without GPy installed.
-
-The geometry / PFN / BLR stack does not depend on GPy, but two modules it sits
-next to (``utils.sem_sampling``, ``utils.cbo_classes``) import it at module
-level. Where GPy is present nothing is stubbed and the real code is exercised;
-where it is absent only the handful of GPy symbols those modules touch are
-faked, so the components under test are always the real ones.
-"""
+"""Import shim so the appendix-E tests run with or without GPy installed: only the GPy
+symbols that sibling modules touch at import time are faked, never the code under test."""
 
 import os
 import sys

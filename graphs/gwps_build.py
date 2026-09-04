@@ -1,10 +1,5 @@
-"""
-Pure construction of the GWPS DAG subgraph (numpy + networkx only, no GPy/jax).
-
-Shared by GwpsGraph (which adds the SEM) and gwps_diagnose.py (which needs only
-the structure + weights). Keeping this dependency-light lets the diagnostic run
-without the heavy modelling stack.
-"""
+"""Pure construction of the GWPS DAG subgraph (numpy + networkx only, no GPy/jax).
+Shared by GwpsGraph and gwps_diagnose.py, so it stays dependency-light."""
 
 import csv
 import os
@@ -79,20 +74,8 @@ def _dagify(g):
 
 
 def _non_ancestor_candidates(sparse, target, keep, n_wanted):
-    """Up to `n_wanted` genes that provably CANNOT be ancestors of the target.
-
-    The carve is the target's ancestor closure, so by construction it holds
-    almost no causally-null nodes -- which makes a matched "non-ancestor"
-    control arm impossible. This adds some back.
-
-    Candidates are drawn from outside nx.ancestors(sparse, target). Because the
-    final subgraph's edges are a subset of `sparse`'s, a node that is not an
-    ancestor of the target in `sparse` cannot become one in the subgraph, so no
-    edge surgery is needed afterwards. Candidates are ranked by how many edges
-    they share with the already-kept genes, so the additions are wired into the
-    subgraph (descendants of the target, siblings sharing a confounder, ...)
-    rather than floating free.
-    """
+    """Up to `n_wanted` genes that provably CANNOT be ancestors of the target,
+    ranked by how many edges they share with the kept genes so they stay wired in."""
     if n_wanted <= 0:
         return []
     forbidden = nx.ancestors(sparse, target) | {target}
@@ -115,19 +98,8 @@ def build_gwps_dag(
     weight_scale=1.0,
     n_non_ancestors=0,
 ):
-    """
-    Returns dict with:
-      int_graph      : nx.DiGraph on integer nodes 0..N-1 (a DAG)
-      W              : N x N weight matrix, W[parent, child] = G_hat*weight_scale
-      index_to_ensg  : {int: ENSG}
-      target_index   : int index of the (final) target
-      n_non_ancestors: how many guaranteed non-ancestors were added
-
-    n_non_ancestors > 0 reserves that many of the `max_nodes` budget for genes
-    that are NOT ancestors of the target, so the graph can host a causally-null
-    intervention arm. It defaults to 0, which reproduces the original carve
-    exactly.
-    """
+    """Build a bounded DAG subgraph around `target` from the sparsified gene network.
+    Returns dict with int_graph, weight matrix W, index_to_ensg, target_index, n_non_ancestors."""
     full = _load_edges(edge_csv)
     sparse = _sparsify(full, top_k_parents)
 

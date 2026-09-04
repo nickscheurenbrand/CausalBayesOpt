@@ -1,36 +1,5 @@
-"""Rerun CBO-U (PARENT_SCALE, doubly-robust, dr2) on Erdos50/Erdos100, linear
-and nonlinear, with the SAME per-replicate reseeding that CBO-U-Geo uses.
-
-Why this exists: scripts_geometry/geometry_boundary_script.py calls
-graph.set_seed(args.seeds_replicate) before sampling ("BASE" for CBO-U-Geo's
-runs). scripts_erdos/large_graph_script.py's set_graph() never calls
-graph.set_seed(...) at all, so every CBO-U/CBO/Random replicate reuses
-ErdosRenyiGraph's constructor-default rng (seed=17) for the SEM noise --
-np.random.seed(seed) in utils.sem_sampling.sample_model does NOT reach a
-np.random.default_rng() Generator, so --seeds_replicate never actually moved
-the data. All three baseline methods' "replicates" are the same draw.
-
-This script fixes ONLY the CBO-U side (PARENT_SCALE, use_doubly_robust=True,
-individual=True -- exactly what large_graph_script.py's run_cbo_unknown_dr_2
-branch runs) so it can be compared against CBO-U-Geo run-for-run on identical
-data. It intentionally does NOT touch CBO or Random: those are produced in the
-same process as the old CBO-U (see run_erdos_50_100_dr2.sh), so fixing all
-three properly means rerunning the whole baseline job, not patching one
-method's script. See scripts_erdos/README or the geometry_boundary_bash.py
-docstring for that larger rerun.
-
-Output goes to results/<graph>_reseeded/run<k>_cbo_unknown_dr2_results_<n_obs>_
-<n_int>[_nonlinear].pickle -- a NEW directory, so existing results/<graph>/...
-pickles (and everything else that reads them) are untouched.
-
-Usage (run from scripts_erdos/, matches run_erdos_50_100_dr2.sh's cwd
-convention -- this script also os.chdir("..") itself, like large_graph_script.py):
-
-  python3 rerun_cbou_reseeded.py                          # both graphs, lin+nonlin, runs 1-3
-  python3 rerun_cbou_reseeded.py --graphs Erdos50          # one graph
-  python3 rerun_cbou_reseeded.py --runs 5                  # more replicates
-  python3 rerun_cbou_reseeded.py --dry_run                 # print the seed/run plan and exit
-"""
+"""Rerun CBO-U (PARENT_SCALE, dr2) on Erdos50/Erdos100 with the per-replicate reseeding CBO-U-Geo uses, since large_graph_script.py's
+set_graph() never seeds the SEM rng. Fixes only CBO-U; output goes to results/<graph>_reseeded/, leaving results/<graph>/ untouched."""
 
 import argparse
 import os
@@ -59,19 +28,18 @@ def parse_args():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--graphs", type=str, default=",".join(GRAPHS))
     p.add_argument("--runs", type=int, default=3,
-                   help="number of replicates; run r uses seed base_seed+r-1, "
-                        "same convention as geometry_boundary_bash.py")
+                   help="number of replicates")
     p.add_argument("--base_seed", type=int, default=BASE_SEED)
     p.add_argument("--variants", type=str, default="linear,nonlinear",
-                   help="comma-separated subset of {linear, nonlinear}")
+                   help="comma-separated subset of linear, nonlinear")
     p.add_argument("--n_observational", type=int, default=N_OBS)
     p.add_argument("--n_trials", type=int, default=N_TRIALS)
     p.add_argument("--n_int", type=int, default=N_INT)
     p.add_argument("--out_suffix", type=str, default="_reseeded",
-                   help="results/<graph><out_suffix>/ is the output dir")
+                   help="output dir suffix")
     p.add_argument("--dry_run", action="store_true")
     p.add_argument("--overwrite", action="store_true",
-                   help="rerun even if the output pickle already exists")
+                   help="rerun even if output exists")
     return p.parse_args()
 
 
