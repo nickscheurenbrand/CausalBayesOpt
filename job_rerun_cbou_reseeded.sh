@@ -21,7 +21,7 @@ LOG=$HOME/causal_bayes_opt/results/rerun_cbou_reseeded_pbs.log
 mkdir -p $HOME/causal_bayes_opt/results
 
 python3 rerun_cbou_reseeded.py \
-    --graphs Erdos20,Erdos50,Erdos100 \
+    --graphs Erdos100 \
     --runs 3 \
     --variants linear,nonlinear \
     --n_observational 200 \
