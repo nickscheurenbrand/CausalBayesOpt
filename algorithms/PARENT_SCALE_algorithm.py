@@ -93,7 +93,6 @@ class PARENT_SCALE(BASE):
         self.D_I = deepcopy(D_I)
         self.graph.set_interventional_range_data(self.D_O)
         self.topological_order = list(self.D_O.keys())
-        # this is too much now, so we are continuously going to update it
         self.exploration_set = exploration_set
         self.es_to_n_mapping = {
             tuple(es): i for i, es in enumerate(self.exploration_set)
@@ -261,16 +260,12 @@ class PARENT_SCALE(BASE):
                 del self.graphs[parents]
 
     def redefine_exploration_set(self):
-        # start with individual interventions
-        print(f"The flattened list {list(self.graphs.keys())}")
-        # flattened_list = [tuple(item) for sublist in self.graphs for item in sublist]
-        flattened_list = []
+        exploration_set = []
         for sublist in self.graphs:
-            for item in sublist:
-                flattened_list.append((item,))
-        unique_set = set(flattened_list)
-        unique_list = list(unique_set)
-        self.exploration_set = unique_list
+            candidate = tuple(sublist)
+            if candidate and candidate not in exploration_set:
+                exploration_set.append(candidate)
+        self.exploration_set = exploration_set
 
     def calculate_do_statistics(self):
         do_effects_functions: List[List[DoFunctions]] = []
