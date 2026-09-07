@@ -40,6 +40,8 @@ def parse_args():
     p.add_argument("--top_k_parents", type=int, default=8)
     p.add_argument("--weight_scale", type=float, default=3.0)
     p.add_argument("--noise_sigma", type=float, default=1.0)
+    p.add_argument("--results_root", type=str, default="results",
+                   help="root folder the results tree is written under")
     p.add_argument("--device", type=str, default="cuda")
     p.add_argument("--allow_cpu_fallback", action="store_true",
                    help="fall back to CPU")
@@ -106,6 +108,7 @@ def main():
             "--prior", args.prior,
             "--prior_mean", args.prior_mean,
             "--device", device,
+            "--results_root", args.results_root,
             "--noiseless",
         ]
         if variant == "oracle":

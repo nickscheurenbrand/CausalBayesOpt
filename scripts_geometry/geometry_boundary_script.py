@@ -120,6 +120,8 @@ def parse_args():
     p.add_argument("--top_k_parents", type=int, default=8)
     p.add_argument("--weight_scale", type=float, default=3.0)
     p.add_argument("--noise_sigma", type=float, default=1.0)
+    p.add_argument("--results_root", type=str, default="results",
+                   help="root folder the results tree is written under")
     return p.parse_args()
 
 
@@ -208,7 +210,8 @@ def run(args):
         results_dict["Weight_Scale"] = args.weight_scale
 
     oracle_suffix = "_oracle" if args.oracle else ""
-    results_dir = f"results/boundary_tracking_{family}_geometry{oracle_suffix}/{tag}"
+    results_dir = (f"{args.results_root}/"
+                   f"boundary_tracking_{family}_geometry{oracle_suffix}/{tag}")
     os.makedirs(results_dir, exist_ok=True)
     ns = "_nonlinear" if nonlinear else ""
     base = (f"run{args.run_num}_cbo_unknown_dr2_boundary_{args.acquisition}_"
