@@ -1,14 +1,23 @@
 # MSc Thesis
 
-* **algorithms**: This file contains the implementatios for the different BayesOpt algorithm
-* **data**: The data for the different runs of the different experiments
-* **experiments**: This folder contains some experiments for the different graph structures as well as algorithms. For now it is mostly RnD
-* **graphs**: This is the graph datastructure written in an object orientated way. The contains functions functions for fitting data to the graphs, as well as other functions which makes use of the dependency structure of it.
-* **results**: The results for the different algorithms with different graph data structures, also has notebooks which plots all the code.
-* **scripts**: The scripts that will run the experiments
-* **utils**: The remaining functions for the graphs, and the algorithm. Also contains a lot of data manipulation code.
+## Setup
 
-# Overleaf link:
-1. **Running document:** https://www.overleaf.com/4757997143jqyssrvsbxsr#165df5
-2. **Final report document:** https://www.overleaf.com/6333177881rxhzzryfpgnm#2f19eb
-3. **Running derivation document:** https://www.overleaf.com/1364399424bdgkgvtmhwmv#958118
+Requires **Python 3.10**. Install the dependencies with:
+
+```bash
+python3.10 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+## Repository structure
+
+* **algorithms**: The implementations for the different BayesOpt algorithms
+* **data**: The data for the different runs of the different experiments
+* **diffcbed**: Supporting code for the differentiable causal experimental design components
+* **graphs**: The graph datastructure written in an object orientated way. It contains functions for fitting data to the graphs, as well as other functions which make use of the dependency structure of it.
+* **posterior_model**: The posterior models over graph structures used by the algorithms
+* **results**: The results for the different algorithms with different graph data structures
+* **scripts**: The scripts that will run the experiments, with per-benchmark variants in **scripts_erdos**, **scripts_dream**, **scripts_gwps**, **scripts_geometry** and **scripts_random**
+* **tests**: Tests for the algorithms and graph utilities
+* **utils**: The remaining functions for the graphs and the algorithms. Also contains a lot of data manipulation code.
